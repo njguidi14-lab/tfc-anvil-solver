@@ -1,0 +1,24 @@
+# Build output
+build/
+out/
+
+# Gradle local cache / daemon state (never commit; regenerated on build)
+.gradle/
+
+# IDE
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+bin/
+.vscode/
+run/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+logs/
+*.log

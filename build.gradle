@@ -1,0 +1,78 @@
+plugins {
+    id 'java-library'
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.neoforged.moddev' version "${moddev_plugin_version}"
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+repositories {
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+    }
+    mavenCentral()
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    // Client-only mod (see @Mod(dist = Dist.CLIENT) in AnvilSolverMod): no dedicated
+    // server run config, since the mod does not load in that configuration at all.
+    runs {
+        client { client() }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+dependencies {
+    // TFC 1.21.1 - https://modrinth.com/mod/terrafirmacraft
+    // Alternative via CurseMaven: implementation "curse.maven:terrafirmacraft-302973:<fileId>"
+    implementation "maven.modrinth:terrafirmacraft:${tfc_version}"
+
+    // Patchouli is a HARD requirement of TFC ("Mod tfc requires patchouli 1.21.1-92-NEOFORGE
+    // or above"), but the Modrinth maven does not resolve transitive mod dependencies, so it
+    // has to be declared explicitly or runClient dies at mod-loading with TFC never loading.
+    // Runtime-only: this mod compiles against TFC's API, never against Patchouli's.
+    runtimeOnly "maven.modrinth:patchouli:${patchouli_version}"
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    maxHeapSize = '1g'
+}
+
+tasks.named('processResources') {
+    def replaceProperties = [
+        mod_id           : mod_id,
+        mod_name         : mod_name,
+        mod_version      : mod_version,
+        mod_license      : mod_license,
+        mod_authors      : mod_authors,
+        mod_description  : mod_description,
+        minecraft_version: minecraft_version,
+        neo_version      : neo_version,
+        tfc_version      : tfc_version,
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}
