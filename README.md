@@ -103,7 +103,7 @@ One honest limitation: the tests' rule-checking helper restates the solver's own
 
 ## License
 
-**LGPL-3.0-or-later** — see [LICENSE](LICENSE) (and [LICENSE.GPL-3.0](LICENSE.GPL-3.0), which the LGPL incorporates by reference). Copyright © njguidi14 — github.com/njguidi14.
+**LGPL-3.0-or-later** — see [LICENSE](LICENSE) (and [LICENSE.GPL-3.0](LICENSE.GPL-3.0), which the LGPL incorporates by reference). Copyright © njguidi14 — [github.com/njguidi14-lab](https://github.com/njguidi14-lab).
 
 In plain terms: use it, bundle it in a modpack, and fork it freely. If you distribute a modified version, that version has to stay open under the same licence. That keeps closed-source reuploads off the table without getting in the way of anyone who just wants to use the mod.
 
