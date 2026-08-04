@@ -103,12 +103,10 @@ One honest limitation: the tests' rule-checking helper restates the solver's own
 
 ## License
 
-By **njguidi14** — github.com/njguidi14.
+**LGPL-3.0-or-later** — see [LICENSE](LICENSE) (and [LICENSE.GPL-3.0](LICENSE.GPL-3.0), which the LGPL incorporates by reference). Copyright © njguidi14 — github.com/njguidi14.
 
-<!-- TODO: decide the license and add a LICENSE file.
-     gradle.properties currently declares mod_license=MIT, which is published in the mod's
-     metadata, but there is no LICENSE file in this repo to back it up. Note this differs from
-     the standalone JS Anvil Solver, which uses "all rights reserved, attribution required" --
-     pick deliberately rather than inheriting either by accident. -->
+In plain terms: use it, bundle it in a modpack, and fork it freely. If you distribute a modified version, that version has to stay open under the same licence. That keeps closed-source reuploads off the table without getting in the way of anyone who just wants to use the mod.
+
+LGPL-3.0 is also on the [EUPL-1.2 compatible-licence list](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12), which matters here because TerraFirmaCraft — the mod this one builds against — is EUPL-1.2.
 
 TerraFirmaCraft is by the TerraFirmaCraft team and is not affiliated with this mod.
