@@ -78,9 +78,8 @@ A recipe adds up to three rules constraining which press *family* must appear in
 
 `ClientEvents` subscribes to `ScreenEvent.Render.Post` and draws when the open screen is TFC's `AnvilScreen`. State is read the same way TFC reads it — `screen.getMenu().getBlockEntity().getMainInputForging()` — so it can't drift from the game's own source of truth. `TfcMapping` converts TFC's `ForgeStep`/`ForgeRule` enums to the solver's framework-independent types and back.
 
-Solutions are memoised on `(target, work, history, rules)`; the BFS only re-runs when the anvil state actually changes, not every frame.
+Solutions are memorized on `(target, work, history, rules)`; the BFS only re-runs when the anvil state actually changes, not every frame.
 
-## Notes for future maintainers
 
 Things that cost real debugging time and are easy to get wrong again:
 
