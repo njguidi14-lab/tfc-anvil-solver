@@ -2,9 +2,11 @@ package com.njguidi14.anvilsolver.client;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalDouble;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.njguidi14.anvilsolver.config.AnvilSolverConfig;
+import com.njguidi14.anvilsolver.config.OverlayTheme;
 import com.njguidi14.anvilsolver.solver.ForgeSim;
 import com.njguidi14.anvilsolver.solver.Solution;
 import com.njguidi14.anvilsolver.solver.Step;
@@ -12,10 +14,14 @@ import net.dries007.tfc.client.screen.AnvilScreen;
 import net.dries007.tfc.common.blockentities.AnvilBlockEntity;
 import net.dries007.tfc.common.component.forge.ForgeStep;
 import net.dries007.tfc.common.component.forge.Forging;
+import net.dries007.tfc.common.component.heat.HeatCapability;
+import net.dries007.tfc.common.component.heat.IHeatView;
 import net.dries007.tfc.common.recipes.AnvilRecipe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -24,14 +30,14 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class AnvilSolverClient {
 
-    private static final int COLOR_BG = 0xD00E1912;
-    private static final int COLOR_BORDER = 0xFF274031;
-    private static final int COLOR_MUTED = 0xFF7F9A86;
-    private static final int COLOR_TEXT = 0xFFB9CDBC;
-    private static final int COLOR_NEXT = 0xFF4CAF6A;
-    private static final int COLOR_ERR = 0xFFF2B8B3;
-    /** Same green as {@link #COLOR_NEXT} at ~25% alpha - tints the highlighted button without hiding its icon. */
-    private static final int COLOR_NEXT_FILL = 0x404CAF6A;
+    // Every colour used here now comes from the configured OverlayTheme, which is read exactly once
+    // per render call in render() and passed down. Two rules keep that honest:
+    //
+    //   1. It is read into a LOCAL, never a static. A static would have to be refreshed when the
+    //      config changed, and would go stale the one time somebody forgot.
+    //   2. No code branches on a colour value. Colours are chosen by role (next, error, muted, ...)
+    //      and only ever handed to GuiGraphics, so swapping themes cannot change what the mod does -
+    //      only what it looks like.
 
     /** Size of a TFC step button and of a step icon; both are 16x16. */
     private static final int ICON_SIZE = 16;
@@ -42,6 +48,28 @@ public final class AnvilSolverClient {
     /** Width and height of TFC's anvil GUI texture sheet, as used by its own blit calls. */
     private static final int TEXTURE_SIZE = 256;
 
+    /** Width of the temperature bar, in pixels. Narrow on purpose - see {@link #buildLines}. */
+    private static final int BAR_WIDTH = 24;
+    /** Height of the temperature bar. Sits inside a normal text row without making it any taller. */
+    private static final int BAR_HEIGHT = 5;
+    /** Horizontal gap between a bar line's text and its bar. */
+    private static final int BAR_GAP = 3;
+
+    /**
+     * U+00B0 DEGREE SIGN, built from its code point instead of typed as a literal.
+     *
+     * <p>Every source file in this mod is pure ASCII and {@code build.gradle} sets no
+     * {@code compileJava.options.encoding}, so javac reads sources in the platform default charset -
+     * which on Windows is not UTF-8. Typing the character directly would make this file's meaning
+     * depend on the charset of whoever compiles it; a numeric code point cannot be mangled by any
+     * encoding, because every character of it is ASCII.
+     *
+     * <p>The glyph itself is safe to draw: it is part of Minecraft's built-in font, not a fallback.
+     */
+    private static final char DEGREE_SIGN = (char) 0x00B0;
+    /** Temperature unit suffix, e.g. the {@code "&deg;C"} in {@code "812&deg;C"}. */
+    private static final String DEGREES_C = DEGREE_SIGN + "C";
+
     /** Inner margin between the box border and its content, on every side. */
     private static final int PADDING = 5;
     /**
@@ -50,9 +78,13 @@ public final class AnvilSolverClient {
      */
     private static final int SCREEN_MARGIN = 2;
     /**
-     * Number of plain text lines {@link #buildLines} puts above the press list ("Target N Work N"
-     * and "K presses"). Named so the vertical-fit maths and the code that emits those lines cannot
-     * drift apart unnoticed.
+     * Number of plain text lines {@link #buildLines} <em>always</em> puts above the press list
+     * ("Target N Work N" and "K presses"). Named so the vertical-fit maths and the code that emits
+     * those lines cannot drift apart unnoticed.
+     *
+     * <p>The optional temperature line sits between those two and is counted separately, by the
+     * caller of {@link #pressRowsToShow}, since it is only present when the item can be heated and
+     * the config option is on.
      */
     private static final int HEADER_LINES = 2;
 
@@ -65,6 +97,28 @@ public final class AnvilSolverClient {
     private static List<Step> cachedHistory;
     private static List<com.njguidi14.anvilsolver.solver.Rule> cachedRules;
     private static Solution cachedSolution;
+
+    /**
+     * Temperature history behind the "~Ns" countdown.
+     *
+     * <p>Deliberately NOT part of the solve cache above, and it must never become part of it. That
+     * cache is keyed on {@code (target, work, history, rules)}; temperature changes several times a
+     * second, so folding it into the key would invalidate the cache on nearly every frame and put
+     * the BFS back on the render thread - which is the exact cost that cache exists to avoid. The
+     * solve is cached, the temperature is read fresh, and the two never touch.
+     *
+     * <p><b>Every frame must report to it - including the frames with nothing to report.</b> It is
+     * static, so it outlives any single screen, item or session, and it can only detect a
+     * <em>change</em> of subject, never a gap. Left uninformed while the anvil sits empty, it holds
+     * on to the last item's samples; drop in a second item within the two-second window whose
+     * subject key happens to match (same item type, same target, same work, same history) and those
+     * samples are fitted together with the new ones. A hot ingot swapped for an identical cold one
+     * produced a confident "~1s" on an item with most of a minute of working time left, because the
+     * jump was a fall and the estimator's rising-sample guard only catches climbs. So every path
+     * that does not take a reading calls {@link CoolingEstimator#clear()}, and there is no path that
+     * does neither.
+     */
+    private static final CoolingEstimator COOLING = new CoolingEstimator();
 
     /**
      * Runtime visibility, flipped by the toggle keybind. Session-only on purpose: it is deliberately
@@ -86,8 +140,16 @@ public final class AnvilSolverClient {
         // Both switches must be on: the config value is the persistent setting, overlayVisible is
         // the per-session keybind toggle.
         if (!AnvilSolverConfig.ENABLED.get() || !overlayVisible) {
+            // Nothing is being read this frame, so the cooling history is now about a past the
+            // estimator can no longer see. See COOLING's field comment for why silence is not
+            // enough; every early return below does the same.
+            COOLING.clear();
             return;
         }
+
+        // Read once, here, and passed down. Not a static, and not re-read per line: a theme change
+        // mid-frame would otherwise be able to draw half a box in one palette and half in another.
+        final OverlayTheme theme = AnvilSolverConfig.THEME.get();
 
         // Mirrors TFC's own AnvilScreen.renderBg, which reads the forging state as
         // blockEntity.getMainInputForging(). Going through the block entity rather than indexing
@@ -104,10 +166,15 @@ public final class AnvilSolverClient {
             // an empty anvil (nothing to say - stay silent) or an item sitting there with no plan
             // picked yet. The second case used to render nothing at all, which is indistinguishable
             // from the mod being broken, so it gets an explicit hint instead.
-            if (hasInputItem(screen)) {
+            //
+            // No temperature is read on either branch, so the estimator has to be told. Without
+            // this, pulling a hot item out and dropping a colder one of the same type back in would
+            // fit a slope straight across the gap.
+            COOLING.clear();
+            if (!inputStack(screen).isEmpty()) {
                 renderBox(screen, graphics, List.of(
-                    new Line("Select a plan", COLOR_MUTED),
-                    new Line("in the anvil", COLOR_MUTED)));
+                    new Line("Select a plan", theme.muted()),
+                    new Line("in the anvil", theme.muted())), theme);
             }
             // Returns either way: with no recipe there is no solution and therefore no next press,
             // so the step-button highlight must not be drawn on this path.
@@ -132,9 +199,12 @@ public final class AnvilSolverClient {
             history = forging.lastSteps().stream().map(TfcMapping::map).toList();
             rules = recipe.getRules().stream().map(TfcMapping::map).toList();
         } catch (final IllegalArgumentException | NullPointerException e) {
+            // Same reasoning as the no-recipe path: no reading is taken on this frame, so the
+            // history must not be allowed to survive the gap.
+            COOLING.clear();
             renderBox(screen, graphics, List.of(
-                new Line("Unsupported", COLOR_ERR),
-                new Line("forge data", COLOR_ERR)));
+                new Line("Unsupported", theme.error()),
+                new Line("forge data", theme.error())), theme);
             return;
         }
 
@@ -144,35 +214,157 @@ public final class AnvilSolverClient {
         // compatibility problem that does not exist. Let it surface.
         final Solution solution = solveCached(target, work, history, rules);
 
-        renderBox(screen, graphics, buildLines(screen, solution, target, work));
-        renderNextButtonHighlight(screen, graphics, solution);
+        // Read fresh every frame - never cached, never part of the solve key. Null only when there
+        // is genuinely no heat information (no item, an item that cannot be heated, or one whose
+        // working temperature is not a usable number), in which case every path below behaves
+        // exactly as it did before this feature existed.
+        //
+        // Deliberately NOT gated on showTemperature. Whether the item is too cold to work is a fact
+        // about the world, not a display preference: the mod needs the answer to avoid highlighting
+        // a button that provably does nothing. showTemperature decides whether the temperature LINE
+        // is drawn, and nothing else.
+        final TempReadout temperature = readTemperature(screen, target, work, history);
+
+        final List<Line> lines = buildLines(
+            screen, solution, target, work,
+            temperature, AnvilSolverConfig.SHOW_TEMPERATURE.get(), theme);
+        renderBox(screen, graphics, lines, theme);
+        renderNextButtonHighlight(screen, graphics, solution, temperature, theme);
     }
 
     /**
-     * Whether there is an item in the anvil's main input slot.
+     * Reads the input item's heat and works out what, if anything, to say about it.
      *
-     * <p>Only used to tell "empty anvil" apart from "item present, no plan selected", so that the
-     * hint is shown for the second case and nothing at all for the first.
+     * <p>Runs regardless of the {@code showTemperature} option. That option controls whether the
+     * temperature <em>line</em> is drawn; it must not control whether the mod knows the item is too
+     * cold to work, because that fact also decides whether the next-button highlight is a helpful
+     * pointer or a lie. Turning the line off and being told to click a dead button was the exact
+     * failure this split fixes.
+     *
+     * <p>Every path that returns null first clears the cooling history. That is not tidiness: the
+     * estimator can only notice a <em>change</em> of subject, never a gap, so a hot item removed and
+     * replaced within the sample window by a colder one with an identical subject key would have its
+     * old samples fitted together with the new ones. See {@link CoolingEstimator#clear()}.
+     *
+     * @return the readout, or null when there is no usable heat information at all - the slot is
+     *         empty, the item is not heatable, or its working temperature is not a usable number
+     */
+    @Nullable
+    private static TempReadout readTemperature(
+        AnvilScreen screen, int target, int work, List<Step> history
+    ) {
+        final ItemStack stack = inputStack(screen);
+        if (stack.isEmpty()) {
+            COOLING.clear();
+            return null;
+        }
+
+        // HeatCapability.view is @Nullable and returns null for anything that cannot hold heat,
+        // which an anvil can absolutely be holding. This guard sits outside the try/catch further
+        // up - that one covers the TFC -> solver mapping and nothing else - so it has to be an
+        // explicit check: an NPE here would be thrown out of ScreenEvent.Render.Post on every
+        // single frame for as long as the screen stayed open.
+        final IHeatView heat = HeatCapability.view(stack);
+        if (heat == null) {
+            COOLING.clear();
+            return null;
+        }
+
+        final float temperature = heat.getTemperature();
+        final float working = heat.getWorkingTemperature();
+
+        // A working temperature of zero (or worse) is not "workable from ice cold" - it is an item
+        // whose heat data this mod cannot say anything sensible about, and every consumer below
+        // degenerates on it: the bar fraction divides by it, "Reheat to 0C" is nonsense, and the
+        // countdown becomes a countdown to absolute zero ("900C ~225s"). Vanilla TFC derives the
+        // working temperature from the melt temperature so this is not expected, but an addon or a
+        // datapack recipe is free to produce it, and there is no honest number to show if one does.
+        // Dropping the whole temperature module for that item is the only answer that cannot lie:
+        // the press plan is unaffected and renders exactly as it did before this feature existed.
+        //
+        // The isFinite checks belong to the same judgement rather than being extra paranoia. NaN
+        // fails every comparison, so a NaN working temperature would slip straight past "<= 0" and
+        // then be cast to 0 by Math.ceil, putting "Reheat to 0C" back on screen through the door
+        // this check was added to close - and a NaN reading fed to the estimator would poison the
+        // regression for the whole sample window.
+        if (!Float.isFinite(temperature) || !Float.isFinite(working) || working <= 0) {
+            COOLING.clear();
+            return null;
+        }
+
+        // The subject key is what stops a trend leaking across items. It intentionally uses the
+        // Item rather than the whole stack: a stack's own equality includes its heat component,
+        // which changes every tick, so keying on the stack would reset the history every frame and
+        // no estimate could ever accumulate. Target/work/history are folded in so that swapping in
+        // a different item of the same type, or landing a press, also starts a clean history.
+        COOLING.observe(
+            new HeatSubject(stack.getItem(), target, work, history),
+            temperature,
+            System.currentTimeMillis()
+        );
+
+        // Bar fraction is progress *towards being workable*, capped at full by the drawing code.
+        // Above the working temperature the bar is simply full and the countdown carries the detail;
+        // below it, the bar is the useful half - it fills visibly as the item reheats. Nothing here
+        // models how hot the item could get, because that ceiling has not been verified.
+        //
+        // The divisor needs no guard: the working <= 0 check above has already returned.
+        final float fill = temperature / working;
+
+        String estimate = null;
+        if (heat.canWork()) {
+            // Only meaningful while the item is still workable: once it is too cold, the number
+            // being counted down to is already behind us.
+            final OptionalDouble seconds = COOLING.secondsUntil(working);
+            if (seconds.isPresent()) {
+                // Never "~0s". Sub-second precision is not something this estimate has earned, and
+                // a zero would read as "already cold" while the item is still perfectly workable.
+                estimate = "~" + Math.max(1L, Math.round(seconds.getAsDouble())) + "s";
+            }
+        }
+
+        return new TempReadout(
+            // Rounded DOWN, not to nearest. The too-cold decision is made by TFC on the unrounded
+            // float, so a nearest-rounded display could show a number the decision does not agree
+            // with: at working = 600.0 and temperature = 599.7 the overlay used to read "600C",
+            // "TOO COLD" and "Reheat to 600C" all at once, which reads as a broken mod. Flooring
+            // guarantees the displayed number never claims to have reached a threshold it has not.
+            (int) Math.floor(temperature),
+            // Rounded UP, for the mirror-image reason: this number is a goal to reach, and rounding
+            // 600.4 down to 600 would tell the player to stop short of workable. Floor for what you
+            // have, ceiling for what you need - both err on the side of "not there yet".
+            (int) Math.ceil(working),
+            heat.canWork(),
+            fill,
+            estimate
+        );
+    }
+
+    /**
+     * The stack in the anvil's main input slot, or {@link ItemStack#EMPTY} if there is none.
+     *
+     * <p>Single source for both things that need the item: telling "empty anvil" apart from "item
+     * present, no plan selected", and the heat lookup. Reading the slot in two places would be two
+     * chances to disagree about which slot the item is even in.
      *
      * <p>This deliberately goes through the <em>menu</em> rather than the block entity, which is the
      * opposite of what the forging read above does. {@code AnvilBlockEntity.getMainInputForging()}
      * hands back forging data, not the stack, and there is no accessor on the block entity that is
      * verifiably public across TFC versions for reading the stack itself - guessing at one would
-     * risk a compile break for a cosmetic check. The menu route is safe here because it is used
-     * <em>only</em> for emptiness: {@code AnvilContainer.addContainerSlots()} adds
-     * {@code SLOT_INPUT_MAIN} first, so index 0 is the main input, and even if TFC ever reordered
-     * those slots the worst outcome is a hint shown or hidden a beat early - never a wrong plan,
-     * since the plan itself still comes from the block entity.
+     * risk a compile break. {@code AnvilContainer.addContainerSlots()} adds {@code SLOT_INPUT_MAIN}
+     * first, so index 0 is the main input; if TFC ever reordered those slots the worst outcome is a
+     * hint or a temperature shown for the wrong slot's item - never a wrong press plan, since the
+     * plan itself still comes from the block entity.
      *
      * <p>The size guard covers the theoretical case of the menu having no slots at all, which would
      * otherwise throw out of {@code getSlot} on every render frame.
      */
-    private static boolean hasInputItem(AnvilScreen screen) {
+    private static ItemStack inputStack(AnvilScreen screen) {
         final var menu = screen.getMenu();
         if (menu.slots.size() <= AnvilBlockEntity.SLOT_INPUT_MAIN) {
-            return false;
+            return ItemStack.EMPTY;
         }
-        return !menu.getSlot(AnvilBlockEntity.SLOT_INPUT_MAIN).getItem().isEmpty();
+        return menu.getSlot(AnvilBlockEntity.SLOT_INPUT_MAIN).getItem();
     }
 
     /**
@@ -187,13 +379,31 @@ public final class AnvilSolverClient {
      *
      * <p>Called only on the feasible-with-presses path - never for an infeasible plan, a finished
      * item, or the unsupported-rule error, since in none of those cases is there a button to press.
+     *
+     * @param temperature the item's heat readout, or null when the item has none at all; a button is
+     *                    not highlighted while the item is too cold to work
+     * @param theme       the palette read once for this frame
      */
     private static void renderNextButtonHighlight(
-        AnvilScreen screen, GuiGraphics graphics, Solution solution
+        AnvilScreen screen, GuiGraphics graphics, Solution solution,
+        @Nullable TempReadout temperature, OverlayTheme theme
     ) {
+        // Every reason not to draw the highlight lives here, so there is one place to check rather
+        // than a condition at the call site and another in the body.
+        //
+        // The temperature clause is not cosmetic: below the working temperature TFC ignores presses
+        // entirely, so lighting up a button would be telling the player to do something that
+        // provably does nothing. A missing highlight reads as "not yet"; a wrong one reads as "the
+        // mod is broken" when clicking it changes nothing.
+        //
+        // This works because readTemperature no longer consults showTemperature. It used to, which
+        // meant a player with showTemperature=false and highlightNextButton=true got a bright
+        // highlight on a dead button - the exact failure the paragraph above says is prevented. Two
+        // independent config options must not be able to cancel each other's guarantees.
         if (!AnvilSolverConfig.HIGHLIGHT_NEXT_BUTTON.get()
             || !solution.feasible()
-            || solution.presses().isEmpty()) {
+            || solution.presses().isEmpty()
+            || (temperature != null && !temperature.canWork())) {
             return;
         }
 
@@ -209,9 +419,9 @@ public final class AnvilSolverClient {
         // Translucent tint first, then a two-pixel-thick border (outer ring plus an inset ring).
         // The icon underneath stays legible through the tint, and the thick border reads clearly at
         // any GUI scale.
-        graphics.fill(left, top, left + ICON_SIZE, top + ICON_SIZE, COLOR_NEXT_FILL);
-        graphics.renderOutline(left, top, ICON_SIZE, ICON_SIZE, COLOR_NEXT);
-        graphics.renderOutline(left + 1, top + 1, ICON_SIZE - 2, ICON_SIZE - 2, COLOR_NEXT);
+        graphics.fill(left, top, left + ICON_SIZE, top + ICON_SIZE, theme.nextFill());
+        graphics.renderOutline(left, top, ICON_SIZE, ICON_SIZE, theme.next());
+        graphics.renderOutline(left + 1, top + 1, ICON_SIZE - 2, ICON_SIZE - 2, theme.next());
         pose.popPose();
     }
 
@@ -236,7 +446,9 @@ public final class AnvilSolverClient {
         return solution;
     }
 
-    private static void renderBox(AnvilScreen screen, GuiGraphics graphics, List<Line> lines) {
+    private static void renderBox(
+        AnvilScreen screen, GuiGraphics graphics, List<Line> lines, OverlayTheme theme
+    ) {
         final Font font = Minecraft.getInstance().font;
         final int y = boxTop(screen);
 
@@ -265,8 +477,8 @@ public final class AnvilSolverClient {
 
         final int x = computeBoxX(screen, width);
 
-        graphics.fill(x, y, x + width, y + height, COLOR_BG);
-        graphics.renderOutline(x, y, width, height, COLOR_BORDER);
+        graphics.fill(x, y, x + width, y + height, theme.background());
+        graphics.renderOutline(x, y, width, height, theme.border());
 
         final PoseStack pose = graphics.pose();
         pose.pushPose();
@@ -276,10 +488,16 @@ public final class AnvilSolverClient {
             final int rowHeight = lineHeight(font, line);
             // Each line carries its own colour, so there is no index math to keep in sync with
             // however buildLines happened to lay the list out.
-            if (line.icon() == null) {
-                graphics.drawString(font, line.text(), x + PADDING, lineTop, line.color(), false);
-            } else {
+            //
+            // These three cases must be tested in the same order as in contentWidth, or a line
+            // would be measured as one kind and drawn as another - and the box border, sized from
+            // the measuring pass, would not match what is inside it.
+            if (line.icon() != null) {
                 drawIconLine(graphics, font, line, x + PADDING, lineTop, rowHeight);
+            } else if (line.bar() != null) {
+                drawBarLine(graphics, font, line, x + PADDING, lineTop, rowHeight, theme);
+            } else {
+                graphics.drawString(font, line.text(), x + PADDING, lineTop, line.color(), false);
             }
             lineTop += rowHeight;
         }
@@ -323,6 +541,46 @@ public final class AnvilSolverClient {
         graphics.drawString(font, delta, iconX + ICON_SIZE + ICON_GAP, textY, line.color(), false);
     }
 
+    /**
+     * Draws a bar line as {@code <text> [====  ]} - for the temperature line, {@code 812&deg;C ~14s}
+     * followed by a small meter.
+     *
+     * <p>The bar is drawn as two filled rectangles rather than written into the text with block
+     * characters. Block glyphs would have to come from the font's fallback provider, which is a
+     * gamble on a published mod - a missing glyph renders as a white box and would make the overlay
+     * look broken. Rectangles also make the line's width exactly predictable, which is what lets
+     * {@link #contentWidth} agree with this method to the pixel.
+     *
+     * @param left      left edge of the line's content, padding already applied
+     * @param top       top edge of the line's row
+     * @param rowHeight the row's full height, used to centre the short bar against the text
+     * @param theme     the palette read once for this frame; supplies the bar's track colour
+     */
+    private static void drawBarLine(
+        GuiGraphics graphics, Font font, Line line, int left, int top, int rowHeight,
+        OverlayTheme theme
+    ) {
+        // Text sits at the row's top, exactly as a plain text line does, so the temperature line's
+        // baseline matches every other line in the box.
+        graphics.drawString(font, line.text(), left, top, line.color(), false);
+
+        final int barLeft = left + font.width(line.text()) + BAR_GAP;
+        final int barTop = top + (rowHeight - BAR_HEIGHT) / 2;
+
+        // Clamped because the fraction is temperature over working temperature, which is well over
+        // 1 for a freshly heated item. NaN, were the inputs ever to produce it, survives both
+        // clamps and rounds to 0 - an empty bar, not an exception and not a bar of random width.
+        final float fraction = Math.max(0f, Math.min(1f, line.bar()));
+        final int filled = Math.round(BAR_WIDTH * fraction);
+
+        // Track first, then the filled portion over it. Reusing the box's own border colour for the
+        // track keeps the empty part of the bar reading as part of the frame rather than as content.
+        graphics.fill(barLeft, barTop, barLeft + BAR_WIDTH, barTop + BAR_HEIGHT, theme.border());
+        if (filled > 0) {
+            graphics.fill(barLeft, barTop, barLeft + filled, barTop + BAR_HEIGHT, line.color());
+        }
+    }
+
     /** Height of a single rendered line: icon lines need room for the 16px icon, text lines do not. */
     private static int lineHeight(Font font, Line line) {
         return line.icon() == null ? textLineHeight(font) : ICON_LINE_HEIGHT;
@@ -350,21 +608,51 @@ public final class AnvilSolverClient {
     }
 
     /**
-     * Returns the prefix of {@code lines} that fits between {@code top} and the bottom of the
-     * window, dropping the rest.
+     * Returns the lines that fit between {@code top} and the bottom of the window, in order,
+     * dropping whatever does not fit and sacrificing droppable lines before essential ones.
      *
-     * <p>Uses exactly the same bound as {@link #availableContentHeight}: a line is kept while the
-     * running content height stays within {@code (screenHeight - SCREEN_MARGIN) - top - 2 * PADDING}.
+     * <p>Uses exactly the same bound as {@link #availableContentHeight}: lines are kept while the
+     * total content height stays within {@code (screenHeight - SCREEN_MARGIN) - top - 2 * PADDING}.
      * {@code buildLines} sizes the press list against that same number, so in normal operation this
      * returns the whole list unchanged and the "+N more" count it computed remains accurate.
+     *
+     * <p><b>Why this is not simply a prefix.</b> It used to be, and that quietly broke the too-cold
+     * state. Those lines are {@code [Target/Work, temp, "N presses", "TOO COLD", "Reheat to N"]},
+     * and trimming purely from the end takes the explanation away first - leaving a box that shows a
+     * press count and then nothing at all, which reads as the mod having given up rather than as the
+     * item being cold. So the first pass removes lines that are not marked essential, last one
+     * first, until the rest fits; the explanation is only ever lost if a box of just those two lines
+     * still would not fit, and even then the truncating backstop keeps "TOO COLD" itself for as long
+     * as one line fits at all.
+     *
+     * <p>On every other path nothing is marked essential, so "remove the last droppable line" is
+     * simply "remove the last line" and the behaviour is identical to the prefix version it replaced.
      */
     private static List<Line> fitVertically(Font font, List<Line> lines, int top, int screenHeight) {
-        final int bottomLimit = screenHeight - SCREEN_MARGIN;
-        final List<Line> visible = new ArrayList<>(lines.size());
-        int height = PADDING * 2;
-        for (final Line line : lines) {
+        // Content height available, padding on both sides already deducted. Can be zero or negative
+        // on a very short window or a large overlayY, in which case both loops below yield nothing.
+        final int budget = (screenHeight - SCREEN_MARGIN) - top - PADDING * 2;
+
+        // Pass 1: give up droppable lines, from the bottom up, while the box is too tall. Removing
+        // from the end first keeps the most important surviving content at the top of the box, where
+        // the reading order already puts it.
+        final List<Line> kept = new ArrayList<>(lines);
+        while (contentHeight(font, kept) > budget) {
+            final int droppable = lastDroppableIndex(kept);
+            if (droppable < 0) {
+                // Only essential lines are left and they still overflow. Pass 2 handles it.
+                break;
+            }
+            kept.remove(droppable);
+        }
+
+        // Pass 2: the backstop. Truncates from the end, exactly as this method always did, for the
+        // case where even the essential lines cannot all fit.
+        final List<Line> visible = new ArrayList<>(kept.size());
+        int height = 0;
+        for (final Line line : kept) {
             final int grown = height + lineHeight(font, line);
-            if (top + grown > bottomLimit) {
+            if (grown > budget) {
                 break;
             }
             height = grown;
@@ -373,15 +661,44 @@ public final class AnvilSolverClient {
         return visible;
     }
 
-    /** Width of a line's drawn content, excluding the box padding. Must match {@link #drawIconLine}. */
-    private static int contentWidth(Font font, Line line) {
-        if (line.icon() == null) {
-            return font.width(line.text());
+    /** Total drawn height of a list of lines, excluding the box's own padding. */
+    private static int contentHeight(Font font, List<Line> lines) {
+        int height = 0;
+        for (final Line line : lines) {
+            height += lineHeight(font, line);
         }
-        // index text + gap + icon + gap + delta text
-        return font.width(line.text())
-            + ICON_GAP + ICON_SIZE + ICON_GAP
-            + font.width(signed(line.icon().delta()));
+        return height;
+    }
+
+    /** Index of the last line that may be dropped to make room, or -1 if every line is essential. */
+    private static int lastDroppableIndex(List<Line> lines) {
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            if (!lines.get(i).essential()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Width of a line's drawn content, excluding the box padding.
+     *
+     * <p>Must match {@link #drawIconLine} and {@link #drawBarLine} exactly, and must test the three
+     * line kinds in the same order the drawing pass does. The box border is sized from this; if the
+     * two ever disagree, the border is drawn around the wrong rectangle.
+     */
+    private static int contentWidth(Font font, Line line) {
+        if (line.icon() != null) {
+            // index text + gap + icon + gap + delta text
+            return font.width(line.text())
+                + ICON_GAP + ICON_SIZE + ICON_GAP
+                + font.width(signed(line.icon().delta()));
+        }
+        if (line.bar() != null) {
+            // text + gap + bar (the bar is a fixed width whatever its fill fraction)
+            return font.width(line.text()) + BAR_GAP + BAR_WIDTH;
+        }
+        return font.width(line.text());
     }
 
     /**
@@ -429,24 +746,39 @@ public final class AnvilSolverClient {
      * tight: at 854x480 with GUI scale 2 the logical screen is 427x240 and the anvil panel is 176
      * wide, leaving roughly 122px beside it. {@link #computeBoxX} only chooses which side the box
      * goes on and pins the left edge at 0 - nothing clips or wraps a line that is simply too wide,
-     * so an over-long line runs off the right of the screen. Keeping every line under about twenty
-     * characters (~110px including padding) is what keeps that from happening.
+     * so an over-long line runs off the right of the screen.
+     *
+     * <p>There is almost no headroom left. The widest line the overlay can currently produce is the
+     * header, not anything optional: {@code "Target 150  Work 150"} measures about 120px including
+     * padding, roughly 2px inside the ~122px available. Any new line, or any widening of an existing
+     * one, has to be measured against that ~122px - not against the header's own width, which is
+     * already at the limit.
+     *
+     * @param temperature            the item's heat readout, or null when the item has no usable
+     *                               heat information at all; independent of the config option
+     * @param temperatureLineEnabled the {@code showTemperature} option, read once by the caller. It
+     *                               governs the temperature line and only that line - the too-cold
+     *                               warning below is gated on the readout, never on this
+     * @param theme                  the palette read once for this frame
      */
-    private static List<Line> buildLines(AnvilScreen screen, Solution solution, int target, int work) {
+    private static List<Line> buildLines(
+        AnvilScreen screen, Solution solution, int target, int work,
+        @Nullable TempReadout temperature, boolean temperatureLineEnabled, OverlayTheme theme
+    ) {
         final List<Line> lines = new ArrayList<>();
         if (!solution.feasible()) {
             // Three short lines rather than two long ones. The previous wording opened with
             // "A recent press already" (~130px with padding), which overran the space beside the
             // GUI at default window size and had its tail drawn off-screen.
-            lines.add(new Line("No path from here", COLOR_ERR));
-            lines.add(new Line("A past press", COLOR_ERR));
-            lines.add(new Line("broke a rule.", COLOR_ERR));
+            lines.add(new Line("No path from here", theme.error()));
+            lines.add(new Line("A past press", theme.error()));
+            lines.add(new Line("broke a rule.", theme.error()));
             return lines;
         }
 
         if (solution.presses().isEmpty()) {
             // Was "Done - Perfectly Forged!" (~137px with padding), which had the same overrun.
-            lines.add(new Line("Perfectly forged!", COLOR_NEXT));
+            lines.add(new Line("Perfectly forged!", theme.next()));
             return lines;
         }
 
@@ -454,22 +786,70 @@ public final class AnvilSolverClient {
         // presses)" line it was far longer than any press entry, so it alone set the box width -
         // wide enough that on a small window the box no longer fit in the space beside the GUI and
         // got mirrored to the left. Split, the longest line is a press entry instead.
-        // NOTE: exactly HEADER_LINES lines are added here; pressRowsToShow subtracts that many
-        // text-line heights when working out how much vertical room the press rows have left.
-        lines.add(new Line("Target " + target + "  Work " + work, COLOR_MUTED));
-        final int pressCount = solution.pressCount();
-        lines.add(new Line(pressCount + (pressCount == 1 ? " press" : " presses"), COLOR_MUTED));
+        // NOTE: exactly HEADER_LINES lines are added below - this one and the press count - with the
+        // optional temperature line between them. pressRowsToShow subtracts a text-line height for
+        // each of them when working out how much vertical room the press rows have left, so any
+        // line added or removed here has to be reflected in the headerLines count further down.
+        lines.add(new Line("Target " + target + "  Work " + work, theme.muted()));
 
-        final int shown = pressRowsToShow(screen, solution.presses().size());
+        // Tracked rather than recomputed: the null check has to sit right at the dereference below,
+        // and the vertical-fit maths further down needs the same answer. One variable, set at the
+        // one place that actually emits the line, is what keeps the two from drifting apart.
+        boolean temperatureLineDrawn = false;
+        if (temperature != null && temperatureLineEnabled) {
+            // One line, high up, because it can invalidate everything under it. Width at the worst
+            // realistic case: "1493" (24px) + degree sign and C (11px) + space (4px) + "~299s"
+            // (30px) + gap (3px) + bar (24px) = 96px, plus 10px of padding = 106px. Comfortably
+            // inside the ~122px available, but NOT the widest line in the box - the header above is,
+            // at roughly 120px. See this method's javadoc before widening anything.
+            final String text = temperature.estimate() == null
+                ? temperature.temperature() + DEGREES_C
+                : temperature.temperature() + DEGREES_C + " " + temperature.estimate();
+            lines.add(Line.withBar(
+                text, temperature.canWork() ? theme.next() : theme.error(), temperature.fill()));
+            temperatureLineDrawn = true;
+        }
+
+        final int pressCount = solution.pressCount();
+        lines.add(new Line(pressCount + (pressCount == 1 ? " press" : " presses"), theme.muted()));
+
+        if (temperature != null && !temperature.canWork()) {
+            // Below the working temperature TFC drops presses on the floor. Listing a plan here
+            // would be actively misleading: the player would click the first step, see nothing
+            // happen, and conclude the solver is wrong. The plan itself is still correct - it is
+            // only unusable until the item is hot again - so the press count above stays and only
+            // the step list is replaced.
+            //
+            // Gated on the readout, NOT on temperatureLineEnabled: turning the temperature line off
+            // is a display preference and must not turn a plan that cannot be executed back into one
+            // that looks like it can. The same reasoning governs the button highlight.
+            //
+            // Both lines are marked essential. They are the only explanation for why no plan is
+            // shown, and they sit at the very bottom of the list, so a short window used to trim
+            // them away and leave a box that simply looked broken. fitVertically gives up the press
+            // count, the temperature line and even the header before it gives up these.
+            lines.add(Line.essential("TOO COLD", theme.error()));
+            lines.add(Line.essential(
+                "Reheat to " + temperature.workingTemperature() + DEGREES_C, theme.error()));
+            return lines;
+        }
+
+        // The temperature line is a text row like the headers, so it eats into the same vertical
+        // budget the press rows are measured against. Counting it here, at the one place that knows
+        // whether it was emitted, is what keeps the fit maths honest. Note this counts the line
+        // being DRAWN, not the readout existing - with showTemperature off there is no row to pay
+        // for, even though the readout above is still very much in use.
+        final int headerLines = HEADER_LINES + (temperatureLineDrawn ? 1 : 0);
+        final int shown = pressRowsToShow(screen, solution.presses().size(), headerLines);
         for (int i = 0; i < shown; i++) {
             final Step step = solution.presses().get(i);
             // The first press is the action to perform right now, so it gets the highlight.
             // Only the index is text here - drawIconLine appends TFC's icon and the signed delta.
-            lines.add(new Line((i + 1) + ".", i == 0 ? COLOR_NEXT : COLOR_TEXT, step));
+            lines.add(new Line((i + 1) + ".", i == 0 ? theme.next() : theme.text(), step));
         }
         final int remaining = solution.presses().size() - shown;
         if (remaining > 0) {
-            lines.add(new Line("+" + remaining + " more", COLOR_TEXT));
+            lines.add(new Line("+" + remaining + " more", theme.text()));
         }
         return lines;
     }
@@ -488,14 +868,16 @@ public final class AnvilSolverClient {
      * <p>The {@code "+N more"} line is paid for out of the same budget whenever anything is being
      * left out, so appending it can never be what pushes the box over the edge.
      *
-     * @param pressCount the full length of the plan
+     * @param pressCount  the full length of the plan
+     * @param headerLines how many plain text lines were emitted above the press list: always
+     *                    {@link #HEADER_LINES}, plus one when the temperature line is actually drawn
      * @return the number of leading presses to list; may be 0, in which case only {@code "+N more"}
      *         reports the omission
      */
-    private static int pressRowsToShow(AnvilScreen screen, int pressCount) {
+    private static int pressRowsToShow(AnvilScreen screen, int pressCount, int headerLines) {
         final int textLine = textLineHeight(Minecraft.getInstance().font);
         // Vertical room left for press rows once the header lines have taken their share.
-        final int room = availableContentHeight(screen) - textLine * HEADER_LINES;
+        final int room = availableContentHeight(screen) - textLine * headerLines;
 
         final int capped = Math.min(pressCount, AnvilSolverConfig.MAX_PRESSES.get());
         final int fitsWithoutMoreLine = Math.max(0, room / ICON_LINE_HEIGHT);
@@ -526,15 +908,100 @@ public final class AnvilSolverClient {
      * from the step it belongs to. Every other line (headers, the finished-item line, the infeasible
      * lines, "+N more", the error lines) has a null {@code icon} and draws {@code text} as-is.
      *
-     * @param text  the text to draw, or just the index label on an icon line
-     * @param color ARGB colour to draw it in
-     * @param icon  the step whose 16x16 TFC icon and delta to draw, or null for a plain text line
+     * <p>On a bar line {@code text} is drawn as-is and a small meter follows it, filled to
+     * {@code bar}. At most one of {@code icon} and {@code bar} is ever set; the drawing and
+     * measuring passes both test {@code icon} first, so a line with both would draw as an icon line
+     * and its bar would be silently ignored rather than misdrawn.
+     *
+     * <p>{@code essential} is what {@link #fitVertically} consults when the box is taller than the
+     * window. Almost every line is droppable, which is the historical behaviour - the list was
+     * simply truncated from the bottom. A line is only marked essential when losing it would leave
+     * the overlay actively misleading rather than merely shorter, which today means the too-cold
+     * explanation and nothing else.
+     *
+     * @param text      the text to draw, or just the index label on an icon line
+     * @param color     ARGB colour to draw it in, already resolved from the active theme
+     * @param icon      the step whose 16x16 TFC icon and delta to draw, or null for a plain text line
+     * @param bar       fill fraction of the trailing meter, clamped to 0..1 when drawn, or null for a
+     *                  line with no meter
+     * @param essential true if this line must survive vertical trimming for as long as any line does
      */
-    private record Line(String text, int color, @Nullable Step icon) {
+    private record Line(
+        String text, int color, @Nullable Step icon, @Nullable Float bar, boolean essential
+    ) {
 
-        /** A plain text line with no icon. */
+        /** A plain text line with no icon and no bar. Droppable, like nearly everything. */
         Line(String text, int color) {
-            this(text, color, null);
+            this(text, color, null, null, false);
         }
+
+        /** A press line: an index label, the step's icon, and its work delta. */
+        Line(String text, int color, Step icon) {
+            this(text, color, icon, null, false);
+        }
+
+        /** A text line with a small meter drawn after it. */
+        static Line withBar(String text, int color, float fill) {
+            return new Line(text, color, null, fill, false);
+        }
+
+        /**
+         * A plain text line that vertical trimming must sacrifice droppable lines to keep.
+         *
+         * <p>Shares its name with the generated {@code essential()} accessor on purpose, so both
+         * read naturally where they are used: {@code Line.essential("TOO COLD", ...)} at
+         * construction and {@code line.essential()} at the test. The signatures differ, so this is
+         * ordinary overloading - the same shape as {@code Integer.toString()} against the static
+         * {@code Integer.toString(int)}.
+         */
+        static Line essential(String text, int color) {
+            return new Line(text, color, null, null, true);
+        }
+    }
+
+    /**
+     * What to display about the input item's heat, already reduced to plain values.
+     *
+     * <p>Everything TFC-specific is resolved in {@link #readTemperature}, so the layout code below
+     * it never touches a heat API and cannot reintroduce a null dereference. A null
+     * {@code TempReadout} - not a zeroed one - is how "there is no heat information at all" is
+     * expressed, which is what keeps a non-heatable item rendering exactly as it did before this
+     * feature existed rather than claiming a confident "0&deg;C".
+     *
+     * <p>Its existence is independent of the {@code showTemperature} option: a readout is produced
+     * whenever the item has usable heat data, because {@code canWork} is needed even when the
+     * temperature line is hidden.
+     *
+     * <p>{@code temperature} is floored and {@code workingTemperature} is ceilinged, deliberately in
+     * opposite directions, so neither displayed number can ever suggest a threshold has been met
+     * that {@code canWork} says has not.
+     *
+     * @param temperature        current temperature, rounded DOWN to a whole degree for display
+     * @param workingTemperature temperature presses start registering at, rounded UP
+     * @param canWork            whether presses register right now; TFC's own answer, on the
+     *                           unrounded values
+     * @param fill               temperature as a fraction of the working temperature; may exceed 1
+     * @param estimate           short "~Ns" countdown to going cold, or null when the observed data
+     *                           does not justify one
+     */
+    private record TempReadout(
+        int temperature, int workingTemperature, boolean canWork, float fill, @Nullable String estimate
+    ) {
+    }
+
+    /**
+     * Identifies which item the cooling history belongs to.
+     *
+     * <p>Two different things must both invalidate a trend: swapping the item, and changing its
+     * forging state. Item type covers the first as far as it can be covered cheaply; target, work
+     * and history cover the second and, in practice, also catch a swap between two items of the
+     * same type that happen to be at different points in their plan.
+     *
+     * @param item    the item type in the input slot
+     * @param target  the recipe's target work value
+     * @param work    the item's current work value
+     * @param history the presses already made
+     */
+    private record HeatSubject(Item item, int target, int work, List<Step> history) {
     }
 }

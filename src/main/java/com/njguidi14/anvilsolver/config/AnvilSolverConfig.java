@@ -7,9 +7,11 @@ public final class AnvilSolverConfig {
     public static final ModConfigSpec CLIENT_SPEC;
     public static final ModConfigSpec.BooleanValue ENABLED;
     public static final ModConfigSpec.BooleanValue HIGHLIGHT_NEXT_BUTTON;
+    public static final ModConfigSpec.BooleanValue SHOW_TEMPERATURE;
     public static final ModConfigSpec.IntValue OVERLAY_GAP;
     public static final ModConfigSpec.IntValue OVERLAY_Y;
     public static final ModConfigSpec.IntValue MAX_PRESSES;
+    public static final ModConfigSpec.EnumValue<OverlayTheme> THEME;
 
     static {
         final ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -23,9 +25,25 @@ public final class AnvilSolverConfig {
                 "Highlight the anvil's own step button for the next press.",
                 "Draws a bright outline over the button you should click next, so you can click the",
                 "highlighted button directly instead of reading the step off the overlay list.",
-                "Only shown while a solution exists and at least one press is still needed."
+                "Only shown while a solution exists and at least one press is still needed.",
+                "Also hidden while the item is too cold to work, since pressing then does nothing.",
+                "That happens whether or not showTemperature is on: the mod always reads the item's",
+                "heat, and showTemperature only decides whether the temperature line is drawn."
             )
             .define("highlightNextButton", true);
+
+        SHOW_TEMPERATURE = builder
+            .comment(
+                "Show the item's temperature line in the overlay.",
+                "Adds one line with the current temperature and a bar showing it against the",
+                "temperature the item must reach before presses register at all, plus a rough",
+                "countdown to that point when the item is measurably cooling.",
+                "This option controls that line only. The mod reads the item's heat either way, so",
+                "the too-cold warning that replaces the press list, and the hidden next-button",
+                "highlight that goes with it, still happen when this is off.",
+                "Has no effect on items that cannot be heated."
+            )
+            .define("showTemperature", true);
 
         OVERLAY_GAP = builder
             .comment(
@@ -46,6 +64,19 @@ public final class AnvilSolverConfig {
         MAX_PRESSES = builder
             .comment("Maximum number of upcoming presses to list at once.")
             .defineInRange("maxPresses", 10, 1, 30);
+
+        THEME = builder
+            .comment(
+                "Colour theme for the overlay. Affects colours only - never layout or behaviour.",
+                "TFC_GREEN: the original green-on-black palette (default).",
+                "COLORBLIND_SAFE: blue for the next press, amber for warnings, so the two colours",
+                "  that carry meaning never rely on telling red from green. They also differ",
+                "  clearly in brightness, so they stay apart in greyscale too.",
+                "HIGH_CONTRAST: white text and border on a more opaque black box, for reading the",
+                "  overlay over a busy background.",
+                "MONOCHROME: no colour at all - the next press is simply the brightest line."
+            )
+            .defineEnum("theme", OverlayTheme.TFC_GREEN);
 
         CLIENT_SPEC = builder.build();
     }

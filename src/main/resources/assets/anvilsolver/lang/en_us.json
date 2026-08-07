@@ -1,4 +1,34 @@
 {
   "key.categories.anvilsolver": "Anvil Solver",
-  "key.anvilsolver.toggle": "Toggle Anvil Solver Overlay"
+  "key.anvilsolver.toggle": "Toggle Anvil Solver Overlay",
+
+  "anvilsolver.configuration.title": "Anvil Solver",
+  "anvilsolver.configuration.section.anvilsolver.client.toml": "Client Settings",
+  "anvilsolver.configuration.section.anvilsolver.client.toml.tooltip": "Every Anvil Solver option. These are client-only and are stored in config/anvilsolver-client.toml.",
+
+  "anvilsolver.configuration.enabled": "Show overlay",
+  "anvilsolver.configuration.enabled.tooltip": "Show the anvil solver overlay in the TFC anvil screen.",
+
+  "anvilsolver.configuration.highlightNextButton": "Highlight next button",
+  "anvilsolver.configuration.highlightNextButton.tooltip": "Draw a bright outline over the anvil's own step button for the next press, so you can click that button directly instead of reading the step off the overlay list. Only shown while a solution exists and at least one press is still needed, and hidden while the item is too cold to work.",
+
+  "anvilsolver.configuration.showTemperature": "Show temperature",
+  "anvilsolver.configuration.showTemperature.tooltip": "Add one line with the item's current temperature and a bar showing it against the temperature the item must reach before presses register, plus a rough countdown while it is cooling. This controls that line only: the too-cold warning still appears when it is off. No effect on items that cannot be heated.",
+
+  "anvilsolver.configuration.overlayGap": "Overlay gap",
+  "anvilsolver.configuration.overlayGap.tooltip": "Horizontal gap in pixels between the anvil GUI's right edge and the overlay box. Negative values pull the overlay back over the GUI itself. If the box will not fit on the right it is mirrored to the left of the GUI and this gap is applied on that side instead.",
+
+  "anvilsolver.configuration.overlayY": "Overlay Y offset",
+  "anvilsolver.configuration.overlayY.tooltip": "Vertical offset in pixels from the anvil GUI's top edge. 0 aligns the top of the overlay box with the top of the GUI panel.",
+
+  "anvilsolver.configuration.maxPresses": "Max presses listed",
+  "anvilsolver.configuration.maxPresses.tooltip": "Maximum number of upcoming presses to list at once.",
+
+  "anvilsolver.configuration.theme": "Colour theme",
+  "anvilsolver.configuration.theme.tooltip": "Colour theme for the overlay. Affects colours only - never layout or behaviour. TFC Green is the original green-on-black palette. Colourblind safe uses blue for the next press and amber for warnings, so neither relies on telling red from green. High contrast is white text on a more opaque black box. Monochrome uses no colour at all: the next press is simply the brightest line.",
+
+  "anvilsolver.configuration.theme.tfc_green": "TFC Green",
+  "anvilsolver.configuration.theme.colorblind_safe": "Colourblind safe",
+  "anvilsolver.configuration.theme.high_contrast": "High contrast",
+  "anvilsolver.configuration.theme.monochrome": "Monochrome"
 }
