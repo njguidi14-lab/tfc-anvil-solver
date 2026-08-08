@@ -8,6 +8,7 @@ public final class AnvilSolverConfig {
     public static final ModConfigSpec.BooleanValue ENABLED;
     public static final ModConfigSpec.BooleanValue HIGHLIGHT_NEXT_BUTTON;
     public static final ModConfigSpec.BooleanValue SHOW_TEMPERATURE;
+    public static final ModConfigSpec.BooleanValue SHOW_ALLOY_CALCULATOR;
     public static final ModConfigSpec.IntValue OVERLAY_GAP;
     public static final ModConfigSpec.IntValue OVERLAY_Y;
     public static final ModConfigSpec.IntValue MAX_PRESSES;
@@ -44,6 +45,21 @@ public final class AnvilSolverConfig {
                 "Has no effect on items that cannot be heated."
             )
             .define("showTemperature", true);
+
+        SHOW_ALLOY_CALCULATOR = builder
+            .comment(
+                "Show the alloy calculator overlay in the TFC crucible screen.",
+                "Lists what is in the crucible as a percentage of the total and names the alloy it",
+                "currently makes. When the mix is not a valid alloy, it also names the closest alloy",
+                "still reachable by adding metal - one that contains everything already in the pot,",
+                "since metal can be added but not taken back out - and, for each metal that is short,",
+                "how many mB of it to add.",
+                "Add one metal at a time and let the numbers refresh: each figure assumes only that",
+                "metal is being added, so adding two at once dilutes both.",
+                "Uses the same theme, overlayGap and overlayY settings as the anvil overlay.",
+                "Independent of the 'enabled' option above, which governs the anvil overlay only."
+            )
+            .define("showAlloyCalculator", true);
 
         OVERLAY_GAP = builder
             .comment(

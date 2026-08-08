@@ -15,6 +15,9 @@
   "anvilsolver.configuration.showTemperature": "Show temperature",
   "anvilsolver.configuration.showTemperature.tooltip": "Add one line with the item's current temperature and a bar showing it against the temperature the item must reach before presses register, plus a rough countdown while it is cooling. This controls that line only: the too-cold warning still appears when it is off. No effect on items that cannot be heated.",
 
+  "anvilsolver.configuration.showAlloyCalculator": "Show alloy calculator",
+  "anvilsolver.configuration.showAlloyCalculator.tooltip": "Show the alloy calculator overlay in the TFC crucible screen. Lists what is in the crucible as a percentage of the total and names the alloy it currently makes. When the mix is not a valid alloy it also names the closest alloy still reachable by adding metal, and how many mB of each short metal to add. Add one metal at a time and let the numbers refresh: each figure assumes only that metal is being added. Independent of the 'Show overlay' option, which governs the anvil overlay only.",
+
   "anvilsolver.configuration.overlayGap": "Overlay gap",
   "anvilsolver.configuration.overlayGap.tooltip": "Horizontal gap in pixels between the anvil GUI's right edge and the overlay box. Negative values pull the overlay back over the GUI itself. If the box will not fit on the right it is mirrored to the left of the GUI and this gap is applied on that side instead.",
 

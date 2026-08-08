@@ -2,6 +2,7 @@ package com.njguidi14.anvilsolver.client;
 
 import com.njguidi14.anvilsolver.AnvilSolverMod;
 import net.dries007.tfc.client.screen.AnvilScreen;
+import net.dries007.tfc.client.screen.CrucibleScreen;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -34,11 +35,19 @@ public final class ClientEvents {
      * <p>The event's {@code GuiGraphics} is handed to us outside the container screen's translated
      * pose stack, which is why {@link AnvilSolverClient} positions the box in absolute screen
      * coordinates via {@code getGuiLeft()}/{@code getGuiTop()}.
+     *
+     * <p>TFC's {@code CrucibleScreen} is dispatched from here for the same reason the anvil is: like
+     * {@code AnvilScreen}, it does not <em>declare</em> {@code render}, so there is no method on it
+     * for a mixin to inject into. The two branches are mutually exclusive - a screen cannot be both -
+     * and they share nothing but this event, by design: see {@link CrucibleCalculator}'s class
+     * javadoc for why the crucible overlay deliberately does not reuse the anvil's box renderer.
      */
     @SubscribeEvent
     public static void onScreenRenderPost(final ScreenEvent.Render.Post event) {
         if (event.getScreen() instanceof AnvilScreen anvilScreen) {
             AnvilSolverClient.render(anvilScreen, event.getGuiGraphics());
+        } else if (event.getScreen() instanceof CrucibleScreen crucibleScreen) {
+            CrucibleCalculator.render(crucibleScreen, event.getGuiGraphics());
         }
     }
 
