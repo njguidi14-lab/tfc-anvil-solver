@@ -1,6 +1,7 @@
 {
   "key.categories.anvilsolver": "Anvil Solver",
   "key.anvilsolver.toggle": "Toggle Anvil Solver Overlay",
+  "key.anvilsolver.cycletarget": "Cycle Alloy Target (Crucible - or click the list)",
 
   "anvilsolver.configuration.title": "Anvil Solver",
   "anvilsolver.configuration.section.anvilsolver.client.toml": "Client Settings",
@@ -16,7 +17,10 @@
   "anvilsolver.configuration.showTemperature.tooltip": "Add one line with the item's current temperature and a bar showing it against the temperature the item must reach before presses register, plus a rough countdown while it is cooling. This controls that line only: the too-cold warning still appears when it is off. No effect on items that cannot be heated.",
 
   "anvilsolver.configuration.showAlloyCalculator": "Show alloy calculator",
-  "anvilsolver.configuration.showAlloyCalculator.tooltip": "Show the alloy calculator overlay in the TFC crucible screen. Lists what is in the crucible as a percentage of the total and names the alloy it currently makes. When the mix is not a valid alloy it also names the closest alloy still reachable by adding metal, and how many mB of each short metal to add. Add one metal at a time and let the numbers refresh: each figure assumes only that metal is being added. Independent of the 'Show overlay' option, which governs the anvil overlay only.",
+  "anvilsolver.configuration.showAlloyCalculator.tooltip": "Show the alloy calculator overlay in the TFC crucible screen. Lists what is in the crucible as a percentage of the total, names the alloy it currently makes, and works out the fewest whole ingots to melt in to reach a target alloy. The overlay also lists the alloys you can still reach: click one to target it, or click 'Auto' to go back to letting the mod pick whichever alloy the mix is closest to. The 'Cycle alloy target' key (default G) still steps through the same list from the keyboard, and is how you reach any alloy past the eight rows the list shows at once. Only alloys containing everything already in the pot are offered, since metal cannot be taken back out - an empty crucible can reach any of them. Every ingot count in one list is part of the same plan: melt them all in and the mix lands in range. Independent of the 'Show overlay' option, which governs the anvil overlay only.",
+
+  "anvilsolver.configuration.ingotVolume": "Ingot volume (mB)",
+  "anvilsolver.configuration.ingotVolume.tooltip": "Volume of one metal ingot in mB, used by the alloy calculator to answer in whole ingots instead of raw millibuckets. 100 is TFC's standard ingot volume and is what you want unless something in your pack has changed it. TFC does not define this as a code constant - it comes out of heating recipe data, which a datapack or addon is free to override - so it is exposed here rather than assumed. Set this wrong and every ingot count the calculator prints is wrong with it.",
 
   "anvilsolver.configuration.overlayGap": "Overlay gap",
   "anvilsolver.configuration.overlayGap.tooltip": "Horizontal gap in pixels between the anvil GUI's right edge and the overlay box. Negative values pull the overlay back over the GUI itself. If the box will not fit on the right it is mirrored to the left of the GUI and this gap is applied on that side instead.",

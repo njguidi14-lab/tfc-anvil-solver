@@ -20,10 +20,11 @@ import org.lwjgl.glfw.GLFW;
  * work for this mod. The press is read from {@code ScreenEvent.KeyPressed.Post} in
  * {@link ClientEvents} instead, which is the hook that actually fires with a screen focused.
  *
- * <p>What this class does own is deciding whether a given key event <em>is</em> the toggle
- * ({@link #isTogglePress}) and the press/release latch that makes one physical press mean one
- * toggle ({@link #beginTogglePress()} / {@link #endTogglePress()}). Both handlers in
- * {@code ClientEvents} are thin wrappers over these, so all the keybind state lives in one place.
+ * <p>What this class does own is deciding whether a given key event <em>is</em> one of the mod's
+ * bindings ({@link #isTogglePress}, {@link #isCycleTargetPress}) and the press/release latches that
+ * make one physical press mean one action ({@code begin...Press()} / {@code end...Press()}). Every
+ * handler in {@code ClientEvents} is a thin wrapper over these, so all the keybind state lives in
+ * one place.
  */
 public final class AnvilSolverKeys {
 
@@ -35,6 +36,9 @@ public final class AnvilSolverKeys {
 
     /** Translation key for the binding itself. Same lang-file requirement as {@link #CATEGORY}. */
     private static final String TOGGLE_NAME = "key.anvilsolver.toggle";
+
+    /** Translation key for the crucible target binding. Same lang-file requirement as {@link #CATEGORY}. */
+    private static final String CYCLE_TARGET_NAME = "key.anvilsolver.cycletarget";
 
     /**
      * Toggles the overlay's visibility for the current session while the anvil screen is open.
@@ -53,6 +57,24 @@ public final class AnvilSolverKeys {
         new KeyMapping(TOGGLE_NAME, GLFW.GLFW_KEY_H, CATEGORY);
 
     /**
+     * Steps the alloy calculator's target through the reachable alloys, and back round to auto,
+     * while the crucible screen is open.
+     *
+     * <p>Bound to G by default. The requirements are narrow: it has to be free in vanilla 1.21.1 so
+     * the binding is not a conflict out of the box, and it has to be free <em>inside a container
+     * screen</em>, which rules out more keys than it looks like. TAB is the obvious "cycle" key and
+     * is exactly wrong here - screens use it for widget focus traversal - and E closes the screen,
+     * 1-9 are the hotbar swap keys, and Q/Ctrl-Q drop items. G is used by neither vanilla nor TFC's
+     * crucible screen, and it is next to H so the mod's two bindings sit together on the keyboard.
+     *
+     * <p>Same plain three-argument constructor as {@link #TOGGLE_OVERLAY}, for the same reason: the
+     * binding is only ever read from the crucible screen, so the default UNIVERSAL conflict context
+     * cannot cause it to fire anywhere it matters.
+     */
+    public static final KeyMapping CYCLE_TARGET =
+        new KeyMapping(CYCLE_TARGET_NAME, GLFW.GLFW_KEY_G, CATEGORY);
+
+    /**
      * Whether the toggle key is currently held down, tracked so the toggle is edge-triggered.
      *
      * <p>This is not an optimisation, it is a correctness fix. Minecraft's {@code KeyboardHandler}
@@ -69,12 +91,27 @@ public final class AnvilSolverKeys {
      */
     private static boolean toggleHeld;
 
+    /**
+     * The same edge-trigger latch as {@link #toggleHeld}, for the target-cycle binding.
+     *
+     * <p>A separate flag rather than a shared one: the two bindings can be rebound to the same key,
+     * and can in principle be held at the same time, so one shared flag would let a release of
+     * either clear the other's latch.
+     *
+     * <p>The auto-repeat problem is worse for this binding than for the toggle. A held toggle key
+     * strobes the overlay between two states; a held cycle key would sweep the target through every
+     * reachable alloy at the OS repeat rate and stop on whichever one the player's finger happened
+     * to leave it on.
+     */
+    private static boolean cycleTargetHeld;
+
     private AnvilSolverKeys() {
     }
 
-    /** Mod-bus: hands the mapping to the game so it appears in, and is rebindable from, Controls. */
+    /** Mod-bus: hands the mappings to the game so they appear in, and are rebindable from, Controls. */
     public static void onRegisterKeyMappings(final RegisterKeyMappingsEvent event) {
         event.register(TOGGLE_OVERLAY);
+        event.register(CYCLE_TARGET);
     }
 
     /**
@@ -126,5 +163,45 @@ public final class AnvilSolverKeys {
      */
     public static void endTogglePress() {
         toggleHeld = false;
+    }
+
+    /**
+     * Whether the given key event matches the target-cycle binding, modifiers included.
+     *
+     * <p>Deliberately identical in form to {@link #isTogglePress} - unbound check, then
+     * {@code isActiveAndMatches} - so both bindings behave the same way when cleared or bound to a
+     * modifier combo. See that method for why {@code matches(keyCode, scanCode)} is not used.
+     */
+    public static boolean isCycleTargetPress(int keyCode, int scanCode) {
+        return !CYCLE_TARGET.isUnbound()
+            && CYCLE_TARGET.isActiveAndMatches(InputConstants.getKey(keyCode, scanCode));
+    }
+
+    /**
+     * Marks the cycle key as held and reports whether this is the <em>first</em> event of that hold
+     * - i.e. a real key-down rather than an OS auto-repeat.
+     *
+     * <p>Call only once the event has already been matched with {@link #isCycleTargetPress}.
+     *
+     * @return true if the caller should advance the target
+     */
+    public static boolean beginCycleTargetPress() {
+        if (cycleTargetHeld) {
+            return false;
+        }
+        cycleTargetHeld = true;
+        return true;
+    }
+
+    /**
+     * Clears the cycle latch so the next key-down advances the target again. Called from the
+     * key-release handler.
+     *
+     * <p>Carries the same known, self-correcting modifier-release edge case as
+     * {@link #endTogglePress()}, for the same reason: the press and release guards are identical on
+     * purpose.
+     */
+    public static void endCycleTargetPress() {
+        cycleTargetHeld = false;
     }
 }

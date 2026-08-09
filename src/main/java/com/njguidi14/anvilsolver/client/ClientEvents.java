@@ -7,6 +7,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * Client-side event wiring for the solver overlay.
@@ -47,7 +48,48 @@ public final class ClientEvents {
         if (event.getScreen() instanceof AnvilScreen anvilScreen) {
             AnvilSolverClient.render(anvilScreen, event.getGuiGraphics());
         } else if (event.getScreen() instanceof CrucibleScreen crucibleScreen) {
-            CrucibleCalculator.render(crucibleScreen, event.getGuiGraphics());
+            // The mouse position is passed for one purpose only: highlighting the target row under
+            // the cursor, so the list reads as clickable. It is in the same scaled screen coordinate
+            // space the box is drawn in, being the very arguments the screen's own render was called
+            // with. Nothing about the overlay depends on it - if these accessors ever go away, pass
+            // -1.0, -1.0 instead and the only thing lost is the hover highlight.
+            CrucibleCalculator.render(
+                crucibleScreen, event.getGuiGraphics(), event.getMouseX(), event.getMouseY());
+        }
+    }
+
+    /**
+     * Selects an alloy target when the player clicks one of the calculator's rows.
+     *
+     * <p><b>Why {@code Pre} and not {@code Post}.</b> Only {@code Pre} is cancellable, and cancelling
+     * is the entire reason this handler exists in the form it does: a click that hits one of the
+     * overlay's rows must not <em>also</em> reach the crucible screen beneath it. On {@code Post} the
+     * screen has already handled the click and there is nothing left to prevent.
+     *
+     * <p><b>Why it is cancelled conditionally.</b> {@link CrucibleCalculator#clickAt} returns whether
+     * the click actually landed on a row, and only then is the event cancelled. A handler that
+     * cancelled every click while the overlay was visible would break the crucible itself - its
+     * slots, its scroll, its inventory - so "did not hit us" has to mean "we were never here".
+     * Cancelling is done through {@code ICancellableEvent}, which
+     * {@code ScreenEvent.MouseButtonPressed.Pre} implements and {@code Post} does not.
+     *
+     * <p>Left button only. Right-click in a container screen is a real action - half-stack pickup and
+     * placement - and stealing it over the overlay would be a bug even where the click hits a row;
+     * middle-click is creative-mode stack cloning. Neither means "choose this", so both fall through
+     * untouched.
+     *
+     * <p>Unlike the keybind handlers below this needs no press/release latch. Mouse buttons do not
+     * auto-repeat, so one physical click produces exactly one event, and re-selecting an
+     * already-selected target is a no-op in any case.
+     */
+    @SubscribeEvent
+    public static void onScreenMouseButtonPressed(final ScreenEvent.MouseButtonPressed.Pre event) {
+        if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            return;
+        }
+        if (event.getScreen() instanceof CrucibleScreen crucibleScreen
+            && CrucibleCalculator.clickAt(crucibleScreen, event.getMouseX(), event.getMouseY())) {
+            event.setCanceled(true);
         }
     }
 
@@ -69,6 +111,11 @@ public final class ClientEvents {
      * <p>The toggle is edge-triggered via {@link AnvilSolverKeys#beginTogglePress()}: this event
      * also fires for OS key auto-repeat, so holding the key down would otherwise strobe the overlay.
      * See that method's class-level state for the full explanation.
+     *
+     * <p>The crucible branch below is a separate {@code if} rather than an {@code else if} on
+     * purpose. A screen cannot be both an {@code AnvilScreen} and a {@code CrucibleScreen}, so the
+     * two are already mutually exclusive, and keeping them independent means the shipped anvil
+     * branch is untouched by the crucible feature - not even by a change of control flow.
      */
     @SubscribeEvent
     public static void onScreenKeyPressed(final ScreenEvent.KeyPressed.Post event) {
@@ -76,6 +123,21 @@ public final class ClientEvents {
             && AnvilSolverKeys.isTogglePress(event.getKeyCode(), event.getScanCode())
             && AnvilSolverKeys.beginTogglePress()) {
             AnvilSolverClient.toggleOverlay();
+        }
+
+        // Cycles the alloy calculator's target. This is now the keyboard alternative to clicking a
+        // row in the target list, not the only way in - kept because it costs nothing, because some
+        // players would rather not take their hand off the keyboard, and because it is the only way
+        // to reach a candidate past the number of rows the list shows at once.
+        //
+        // Edge-triggered through its own latch for the same reason the toggle is, and a more pressing
+        // one: this event repeats at the OS key-repeat rate, so an unlatched handler would run the
+        // target through every reachable alloy for as long as the key was held and land on an
+        // essentially arbitrary one.
+        if (event.getScreen() instanceof CrucibleScreen
+            && AnvilSolverKeys.isCycleTargetPress(event.getKeyCode(), event.getScanCode())
+            && AnvilSolverKeys.beginCycleTargetPress()) {
+            CrucibleCalculator.cycleTarget();
         }
     }
 
@@ -94,6 +156,14 @@ public final class ClientEvents {
         if (event.getScreen() instanceof AnvilScreen
             && AnvilSolverKeys.isTogglePress(event.getKeyCode(), event.getScanCode())) {
             AnvilSolverKeys.endTogglePress();
+        }
+
+        // Mirrors the crucible press branch exactly - same bus, same Post variant, same guards -
+        // because the two must agree on what counts as "the cycle key" or the latch would be set by
+        // one and never cleared by the other, and the target would advance exactly once per session.
+        if (event.getScreen() instanceof CrucibleScreen
+            && AnvilSolverKeys.isCycleTargetPress(event.getKeyCode(), event.getScanCode())) {
+            AnvilSolverKeys.endCycleTargetPress();
         }
     }
 }
