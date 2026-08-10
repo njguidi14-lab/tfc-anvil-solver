@@ -94,6 +94,38 @@ public final class ClientEvents {
     }
 
     /**
+     * Scrolls the alloy calculator's target list when the wheel is turned over the overlay box.
+     *
+     * <p>Deliberately built to the same shape as {@link #onScreenMouseButtonPressed} above, down to
+     * the order of the conditions: {@code Pre} because only {@code Pre} is cancellable, and
+     * cancelled conditionally on what the calculator reports, because the crucible screen has
+     * scrolling of its own and a handler that ate the wheel whenever the overlay was open would
+     * break it. {@link CrucibleCalculator#scrollAt} returns false for a cursor outside the box, for
+     * a box that was not drawn, and for a list that cannot move any further in the direction asked -
+     * and every one of those falls straight through to the screen underneath.
+     *
+     * <p><b>Why this exists.</b> The target list shows at most eight candidates at a time and an
+     * empty crucible reaches far more than eight, so anything below the fold was reachable only by
+     * the cycle key - which is to say, not reachable by mouse at all, in a list whose entire point
+     * is that it is clicked. This is the missing gesture.
+     *
+     * <p>Only the vertical delta is read. {@code getScrollDeltaX} exists on the event and is
+     * non-zero on trackpads and tilt wheels, but the list has one axis, and consuming a horizontal
+     * scroll to do nothing with it would take it away from whatever else might want it.
+     *
+     * <p>No press/release latch, for the same reason the click handler needs none: a wheel notch is
+     * one event, not a held state that repeats.
+     */
+    @SubscribeEvent
+    public static void onScreenMouseScrolled(final ScreenEvent.MouseScrolled.Pre event) {
+        if (event.getScreen() instanceof CrucibleScreen crucibleScreen
+            && CrucibleCalculator.scrollAt(
+                crucibleScreen, event.getMouseX(), event.getMouseY(), event.getScrollDeltaY())) {
+            event.setCanceled(true);
+        }
+    }
+
+    /**
      * Toggles the overlay when the mod's keybind is pressed with the anvil screen open.
      *
      * <p>This is the only workable place to read that key. {@code KeyMapping.consumeClick()} polled
@@ -126,9 +158,10 @@ public final class ClientEvents {
         }
 
         // Cycles the alloy calculator's target. This is now the keyboard alternative to clicking a
-        // row in the target list, not the only way in - kept because it costs nothing, because some
-        // players would rather not take their hand off the keyboard, and because it is the only way
-        // to reach a candidate past the number of rows the list shows at once.
+        // row in the target list, not the only way in - kept because it costs nothing and because
+        // some players would rather not take their hand off the keyboard. It is no longer the only
+        // route to a candidate below the visible window either: the wheel handler above scrolls the
+        // list, which is what that job should have been from the start.
         //
         // Edge-triggered through its own latch for the same reason the toggle is, and a more pressing
         // one: this event repeats at the OS key-repeat rate, so an unlatched handler would run the
