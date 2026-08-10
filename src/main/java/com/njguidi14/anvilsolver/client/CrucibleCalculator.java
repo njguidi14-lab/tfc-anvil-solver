@@ -2151,17 +2151,38 @@ public final class CrucibleCalculator {
                 continue;
             }
 
-            int outOfRange = 0;
+            // How far the pot is from this alloy, measured as a DISTANCE rather than a count.
+            //
+            // Counting out-of-range components was the obvious measure and it does not work, which is
+            // worth spelling out because it looked right and shipped a user-reported bug twice. The
+            // count is degenerate on exactly the case people care about: a pot of one pure metal has
+            // that metal at fraction 1.0 (above every TFC maximum) and every other component at 0.0
+            // (below every minimum), so EVERY two-component alloy scores 2 and the key decides
+            // nothing. Whatever tie-break sat underneath then chose - and when that was ingot count,
+            // it chose whichever alloy had the loosest ranges, which is how Sterling Silver kept being
+            // recommended for a crucible of copper.
+            //
+            // Summing how far outside its range each component sits separates them properly. From
+            // 100 mB of pure copper: Bronze and Brass score 0.16, Bismuth Bronze 0.65, Sterling Silver
+            // 1.20, Rose Gold 1.40 - which is the order a player would call "closest", and the count
+            // could not express because all of them tie at 2 (or rank Bismuth Bronze *last* at 3,
+            // despite it being nearer than both Sterling Silver and Rose Gold).
+            double distance = 0.0;
             for (final AlloyRange range : ranges) {
-                if (!range.isIn(fractionOf(amountOf(amounts, range.fluid()), total))) {
-                    outOfRange++;
+                final double fraction = fractionOf(amountOf(amounts, range.fluid()), total);
+                if (fraction < range.min()) {
+                    distance += range.min() - fraction;
+                } else if (fraction > range.max()) {
+                    distance += fraction - range.max();
                 }
+                // In range contributes nothing, so a component already correct is free - which is what
+                // makes "already partly right" beat "needs everything moved", as isIn() did before.
             }
             // The primary sort key, and the reason this loop now solves rather than just measures.
             // Memoised on the crucible state, so this is a map lookup on every frame but the one
             // where the contents changed - see solvePlan for what a miss actually costs.
             final int ingots = solvePlan(recipe, ranges, amounts, total).ingots();
-            ranked.add(new Ranked(recipe, ingots, outOfRange, ranges.size(),
+            ranked.add(new Ranked(recipe, ingots, distance, ranges.size(),
                 fluidName(recipe.result())));
         }
 
@@ -2179,8 +2200,9 @@ public final class CrucibleCalculator {
             //    recommended Sterling Silver essentially always. "Fewest ingots" does not find the
             //    nearest alloy; it finds whichever alloy has the loosest tolerances, which is worse
             //    than the arbitrary alphabetical order it replaced because it looks principled.
-            if (left.outOfRange() != right.outOfRange()) {
-                return Integer.compare(left.outOfRange(), right.outOfRange());
+            final int byDistance = Double.compare(left.distance(), right.distance());
+            if (byDistance != 0) {
+                return byDistance;
             }
             // 2. Fewest ingots, now a genuine tie-break: between two alloys the mix is equally close
             //    to, the cheaper one to finish is the better suggestion.
@@ -2776,10 +2798,10 @@ public final class CrucibleCalculator {
      * @param recipe     the candidate itself
      * @param ingots     total ingots to reach it, the primary key, or {@code Integer.MAX_VALUE} when
      *                   it cannot be reached within {@link #MAX_INGOTS_TO_ADD}
-     * @param outOfRange how many of its components the crucible currently has outside their range
+     * @param distance   summed distance of every component from its allowed range, 0 when the pot already matches
      * @param size       how many components it has
      * @param name       its result's display name, the final tie-break
      */
-    private record Ranked(AlloyRecipe recipe, int ingots, int outOfRange, int size, String name) {
+    private record Ranked(AlloyRecipe recipe, int ingots, double distance, int size, String name) {
     }
 }
