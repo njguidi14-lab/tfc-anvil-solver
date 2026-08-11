@@ -911,14 +911,16 @@ public final class CrucibleCalculator {
             // the question the player actually has: how do I get from this to bronze? That case is
             // almost certainly the most common reason to look at a crucible at all.
             //
-            // So the result line is kept - it is correct - but a lone metal falls through to the
-            // calculator as well. A genuine multi-metal alloy is a finished product and needs no
-            // routes; a single metal is a starting point and does.
-            if (present.size() > 1) {
-                // No calculator on this path, so no picker either - Content carries a null target
-                // list, which is what tells drawBox there is nothing clickable to make room for.
-                return new Content(lines, null);
-            }
+            // Everything falls through to the calculator from here, including a finished alloy.
+            //
+            // An earlier version stopped at this line for any valid multi-metal alloy, on the theory
+            // that a finished product needs no routes. That was wrong twice over. Practically: the
+            // moment you succeed, the overlay stops telling you what the alloy IS, so topping the pot
+            // up means guessing the ratio or leaving the screen - which is exactly what a player does
+            // next, because one crucible rarely fills everything they are making. And factually: a
+            // valid alloy is not always a dead end. A pot of Brass (copper + zinc) can still reach
+            // Bismuth Bronze, whose components are a strict superset, by adding zinc and bismuth. The
+            // old code refused to say so and gave no way to ask.
         } else {
             lines.add(new Line("Not a valid alloy", theme.error()));
         }
@@ -993,6 +995,20 @@ public final class CrucibleCalculator {
         final String mode = index < 0
             ? "(auto)"
             : "(" + (index + 1) + "/" + candidates.size() + ")";
+
+        // A blank row between "what is in the pot" and "what to do about it". The box had grown to a
+        // flat wall of a dozen-odd lines - composition, result, target, plan, ore counts, caveats,
+        // picker - with nothing telling the eye where one thought ended and the next began, and the
+        // user said as much. One empty line is the cheapest possible fix and cannot go wrong: it is a
+        // plain Line, so it measures and draws through the same path as every other row and costs one
+        // row of the vertical budget like every other row, and it is not built with Line.row, so it
+        // records no click rectangle and is not selectable.
+        //
+        // Deliberately only one, and deliberately here rather than also above the picker: the picker
+        // already has its own "Click a target:" heading doing that job, and appendTargetRows budgets
+        // its rows to the exact pixel - slipping an extra line into that arithmetic is how the
+        // interactive rows got silently trimmed the first time.
+        lines.add(new Line("", theme.muted()));
         lines.add(new Line("Target: " + fluidName(target.result()) + " " + mode, theme.muted()));
 
         // Plan first, picker second, and the order is deliberate: the answer - which ingots to go and
@@ -1323,7 +1339,23 @@ public final class CrucibleCalculator {
         }
         if (listed == 0) {
             // A feasible plan of zero ingots means every component is already inside its range.
-            lines.add(new Line("Already there", theme.next()));
+            lines.add(new Line("In range", theme.next()));
+
+            // ...and this is precisely when the ratio matters most. One crucible rarely fills
+            // everything the player is making, so the next thing they do is top the pot up - and if
+            // the overlay goes quiet the moment they succeed, they have to remember the ratio or go
+            // and look it up. Printing the target's own ranges keeps "make more of this" on screen.
+            //
+            // The ranges rather than a top-up plan: a top-up is only one of many valid additions
+            // (any amount in proportion works), whereas the range is the rule all of them obey, and
+            // it costs one line per component instead of a second solve.
+            lines.add(new Line("Ratio to keep:", theme.muted()));
+            for (final AlloyRange range : ranges) {
+                lines.add(new Line(
+                    INDENT + fluidName(range.fluid()) + "  "
+                        + percentRange(range.min(), range.max()),
+                    theme.text()));
+            }
         }
 
         if (volume.mixed()) {
@@ -2267,6 +2299,18 @@ public final class CrucibleCalculator {
         // Locale.ROOT, not the default locale: a French client would otherwise render "91,2%", and
         // more to the point the decimal separator would change depending on who is playing.
         return String.format(Locale.ROOT, "%.1f%%", fraction * 100.0);
+    }
+
+    /**
+     * Formats an allowed range as whole percentages, e.g. {@code 0.88, 0.92} to {@code "88-92%"}.
+     *
+     * <p>Whole numbers rather than {@link #percent}'s one decimal, and one {@code %} rather than two.
+     * TFC's ranges are round numbers, the decimals would always be {@code .0}, and this line sits in
+     * a box whose width is set by its longest entry - so the precision would cost pixels and buy
+     * nothing. The measured value above it keeps its decimal, because that one genuinely varies.
+     */
+    private static String percentRange(double min, double max) {
+        return String.format(Locale.ROOT, "%.0f-%.0f%%", min * 100.0, max * 100.0);
     }
 
     // ---------------------------------------------------------------------------------------------
