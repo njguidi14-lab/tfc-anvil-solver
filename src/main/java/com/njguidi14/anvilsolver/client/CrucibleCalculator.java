@@ -112,20 +112,19 @@ import org.jetbrains.annotations.Nullable;
  * {@code overlayGap}/{@code overlayY} config values, so both overlays sit in the same place relative
  * to their GUI and change together.
  *
- * <p><b>Why ore counts sit next to the ingot counts.</b> Early game the player is not melting
- * ingots at all - they are dropping raw ore straight into the crucible, because ingots are what the
- * crucible is being used to work towards. An answer given only in ingots therefore answers the
- * wrong question for the exact stretch of the game where the calculator is most useful. The ore
- * counts are not the ingot answer divided by a yield: {@link #solveIngots} takes the unit volume as
- * a parameter, so handing it an ore grade's yield instead of an ingot volume runs the same verified
- * search over whole ore of that grade. Dividing would round, and a rounded count can overshoot a
- * component's maximum and stop the alloy forming at all.
+ * <p><b>Why the active row is marked by colour alone.</b> It used to carry a literal {@code "> "}
+ * prefix as well, on the theory that a theme with no hue needs a character to fall back on. That is
+ * not what {@link OverlayTheme#MONOCHROME} actually does - its text roles are a brightness ladder,
+ * and {@code next()} is pure white against {@code text()}'s mid grey - so the marker was a second
+ * copy of a signal that already survives greyscale. It also cost the list its alignment: the marker
+ * and the plain indent are different widths in a proportional font, so every name shifted a pixel or
+ * two sideways as the selection moved over it. Every row now shares one {@link #INDENT} and differs
+ * only in colour.
  *
  * <p>This file, like every other in the mod, is pure ASCII: {@code build.gradle} sets no
  * {@code compileJava.options.encoding}, so javac reads sources in the platform default charset.
- * Nothing here needs a non-ASCII glyph - the arrow is {@code "->"}, the selected-row marker is
- * {@code "> "} and the percent sign is ASCII - so unlike {@code AnvilSolverClient}'s degree sign
- * there is no code-point constant to build.
+ * Nothing here needs a non-ASCII glyph - the arrow is {@code "->"} and the percent sign is ASCII -
+ * so unlike {@code AnvilSolverClient}'s degree sign there is no code-point constant to build.
  */
 public final class CrucibleCalculator {
 
@@ -143,84 +142,26 @@ public final class CrucibleCalculator {
     private static final String INDENT = "  ";
 
     /**
-     * Indent on the ore line, one level deeper than {@link #INDENT}, so it reads as a footnote on
-     * the ingot line directly above it rather than as another metal in the plan.
-     *
-     * <p>A fixed indent rather than a computed one that would line the ore counts up under the ingot
-     * count. Minecraft's font is proportional, so padding with spaces to a character column does not
-     * produce a straight edge anyway - it produces an edge that wanders by a few pixels per metal
-     * name, which looks worse than an honest fixed indent and costs width to do it.
-     */
-    private static final String ORE_INDENT = INDENT + INDENT;
-
-    /** Leader on the ore line. Abbreviated because the box's width budget is the binding constraint. */
-    private static final String ORE_PREFIX = "ore: ";
-
-    /**
-     * The ore grades this looks for, as the prefixes TFC puts on the ore item's name, indexed by the
-     * grade indices used throughout the ore code below.
-     *
-     * <p>TFC's own {@code Ore.Grade} enum is deliberately <em>not</em> imported. Nothing here needs
-     * the enum - the grade is read out of an item id either way - so importing it would buy a tighter
-     * coupling to TFC's package layout in exchange for nothing, on a build that has to stay green.
-     *
-     * <p>The mB each grade yields is not in this table and must never be: TFC keeps those numbers in
-     * heating recipe data exactly as it keeps ingot volume there, so a datapack is free to change
-     * them. They are detected - see {@link #detectOreYields}.
-     */
-    private static final String[] GRADE_PREFIXES = {"poor_", "normal_", "rich_"};
-
-    /**
-     * One letter per grade, in the same index order as {@link #GRADE_PREFIXES}, as printed on the ore
-     * line. Single letters because three counts plus three separators have to fit on one line inside
-     * a box whose width is already set by translated metal names.
-     */
-    private static final String[] GRADE_LETTERS = {"P", "N", "R"};
-
-    /** How many grades there are. Kept as a name so the array indices below are never bare numbers. */
-    private static final int GRADE_COUNT = 3;
-
-    /**
-     * The registry path prefix TFC gives every ore item. Ore items are named after the <em>ore</em>
-     * ({@code native_copper}, {@code malachite}, {@code hematite}), not after the metal, which is why
-     * the ore for a metal cannot be derived from the metal's fluid id the way
-     * {@link #detectIngotVolume} derives the ingot's - and why {@link #detectOreYields} goes the other
-     * way round, from every ore item to whatever metal it turns out to melt into.
-     *
-     * <p>Matched on the path only, not on the namespace, so an addon that adds ores under its own
-     * namespace and follows TFC's naming is picked up with no change here.
-     */
-    private static final String ORE_PATH_PREFIX = "ore/";
-
-    /**
-     * Prefix on the currently selected row of the target list. Sized to match {@link #INDENT} closely
-     * enough that the names still read as a column, so the marker is the thing that stands out.
-     *
-     * <p>The marker exists <em>as well as</em> the colour, not instead of it. Colour alone would put
-     * the whole "which one am I on?" signal on a single palette role, and one of the four themes
-     * ({@code MONOCHROME}) carries no hue at all. A literal {@code ">"} says it in characters.
-     */
-    private static final String ACTIVE_MARKER = "> ";
-
-    /**
      * The <em>most</em> candidate alloys the target list will show at once, not counting the "Auto"
      * row. An upper bound, not a fixed count - see {@link #appendTargetRows}, which shows fewer
      * whenever fewer will fit.
      *
      * <p>There has to be a ceiling even on a tall window: an empty crucible reaches every alloy in
      * the pack, and TFC alone ships enough of them that an uncapped list would be a wall of names to
-     * read through. Eight is chosen because it comfortably covers the alloys a player is
-     * realistically choosing between while keeping the whole box inside a 1080p window at GUI scale
-     * 3, and because the window both scrolls under the mouse wheel and follows the selection, so the
-     * cap limits what is <em>visible</em> at once, never what is reachable. Anything past it is
-     * reported as a "+N more" line and reached by scrolling or by the cycle key.
+     * read through. Five is deliberately short of the number of alloys a player might plausibly be
+     * choosing between, because the cap governs what is <em>visible</em> at once and never what is
+     * reachable: the window scrolls under the mouse wheel, follows the selection, and the cycle key
+     * steps through the whole list regardless. Anything past the cap is counted on a "+N more" line,
+     * so a shorter window costs a glance rather than an option. Eight was the previous value and made
+     * the box tall enough to dominate the screen next to a crucible GUI that is itself only nine rows
+     * of slots.
      */
-    private static final int MAX_TARGET_ROWS = 8;
+    private static final int MAX_TARGET_ROWS = 5;
 
     /**
      * Candidate rows the window moves by per wheel notch.
      *
-     * <p>One, not a page. The list is at most eight rows tall and its rows are single words, so a
+     * <p>One, not a page. The list is at most five rows tall and its rows are single words, so a
      * page-sized jump would replace the entire visible set with an entirely unfamiliar one on every
      * notch - there would be nothing left on screen to tell the player which direction they had just
      * gone. Row-at-a-time keeps a shared edge between one frame and the next.
@@ -239,24 +180,6 @@ public final class CrucibleCalculator {
      * "no mix found within N ingots" rather than a partial answer.
      */
     private static final int MAX_INGOTS_TO_ADD = 64;
-
-    /**
-     * The same ceiling for the ore solves, and much higher, because ore is a much smaller unit.
-     *
-     * <p>An ore-based plan needs roughly {@code ingotVolume / oreYield} times as many units as the
-     * ingot plan for the same target - about seven times at TFC's numbers, and more for poor ore. A
-     * bronze crucible that is eight ingots away is around sixty poor ore away, so reusing
-     * {@link #MAX_INGOTS_TO_ADD} here would report "no plan" on perfectly ordinary early-game cases,
-     * which is the one thing worse than a wrong number: a blank where a right number belongs.
-     *
-     * <p>320 is sized from the vessel rather than from taste. A TFC crucible holds a few thousand mB
-     * and the smallest ore yield in the game is well into double figures, so filling one from empty
-     * with the poorest ore in the pack lands comfortably inside this. It is also the term that sets
-     * the search cost - the loop is {@code O(maxUnits^2 * components)} - and at 320 that is a few
-     * hundred thousand operations per grade, paid at most three times, and only on the frame the
-     * crucible's contents actually change. See {@link #oreSolveCache}.
-     */
-    private static final int MAX_ORE_TO_ADD = 320;
 
     /**
      * Slack applied to the {@code ceil}/{@code floor} that turn the range bounds into whole ingot
@@ -441,43 +364,6 @@ public final class CrucibleCalculator {
     private static WeakReference<ClientLevel> ingotVolumeLevel;
 
     /**
-     * Detected ore yields in mB per metal fluid, by grade. A metal absent from this map has no ore
-     * this pack can melt into it, which is a real and common answer - most TFC metals are alloys and
-     * have no ore at all.
-     *
-     * <p>Filled in one sweep rather than per metal, unlike {@link #ingotVolumeCache}, because the
-     * detection genuinely runs the other way round: ore items are named after the ore, not the metal,
-     * so the only way to find "the ore for copper" is to melt every ore in the registry and see which
-     * ones come out copper. Doing that per metal would be one full registry walk per metal; doing it
-     * once builds the whole table for the price of one.
-     */
-    private static final Map<Fluid, OreYields> oreYieldCache = new HashMap<>();
-
-    /**
-     * Whether {@link #detectOreYields} has already run for the level in {@link #oreYieldLevel}.
-     *
-     * <p>Needed as a flag in its own right because an empty {@link #oreYieldCache} is a legitimate
-     * result - a pack with no ore heating recipes at all - and without this the sweep would re-run on
-     * every frame forever in exactly that case. Same reasoning as caching the {@code 0} failure in
-     * {@link #ingotVolumeCache}, and it is raised <em>before</em> the sweep runs so that a sweep which
-     * throws is not retried sixty times a second either.
-     */
-    private static boolean oreYieldsScanned;
-
-    /**
-     * The level {@link #oreYieldCache} was detected against, held weakly, with exactly the semantics
-     * and the same known {@code /reload} limit as {@link #ingotVolumeLevel}.
-     *
-     * <p>A separate reference rather than sharing {@code ingotVolumeLevel}, even though the two are
-     * always invalidated by the same event. Sharing one field would mean whichever detection ran
-     * first cleared its own map and updated the reference, after which the second would find the
-     * reference already current and keep serving the previous world's numbers - a stale-cache bug
-     * whose only symptom is a wrong number on screen.
-     */
-    @Nullable
-    private static WeakReference<ClientLevel> oreYieldLevel;
-
-    /**
      * One finished ingot plan per candidate recipe, valid only for the crucible state recorded in
      * the four fields below.
      *
@@ -501,25 +387,6 @@ public final class CrucibleCalculator {
      * recipe manager handed out this frame.
      */
     private static final Map<AlloyRecipe, SolvePlan> solveCache = new HashMap<>();
-
-    /**
-     * One finished set of ore plans per candidate recipe - up to three, one per grade - keyed and
-     * invalidated by exactly the same crucible state as {@link #solveCache}.
-     *
-     * <p><b>Why a second map and not another component of {@link SolvePlan}.</b> Not because the key
-     * differs - it is the same key, cleared on the same condition, in the same place, so there is one
-     * invalidation rule here and not two. It is because the two are wanted for different sets of
-     * recipes. {@code solveCache} is filled for <em>every</em> candidate, since the ranking is the
-     * ingot count; the ore plans are only ever needed for the one target actually on screen. Folding
-     * them into {@code SolvePlan} would compute three extra searches for each of twenty candidates
-     * that will never display them, turning a cache miss from a few hundred thousand operations into
-     * tens of millions. Kept separate, a miss costs three searches for one recipe.
-     *
-     * <p>So this fills lazily and sparsely: {@link #appendPlan} asks for the selected target and
-     * nothing else. Selecting a different target on an unchanged crucible is therefore one miss - the
-     * three searches for the newly selected recipe - and every frame after it is a hit.
-     */
-    private static final Map<AlloyRecipe, OrePlans> oreSolveCache = new HashMap<>();
 
     /**
      * The crucible contents {@link #solveCache} was computed against, or null when it holds nothing.
@@ -983,7 +850,7 @@ public final class CrucibleCalculator {
         // still clickable and still scrollable; the player just has to say what they are making.
         if (index < 0 && total <= 0) {
             lines.add(new Line("Pick a target below", theme.muted()));
-            return new TargetList(candidates, index, false);
+            return new TargetList(candidates, index);
         }
 
         final AlloyRecipe target = candidates.get(Math.max(index, 0));
@@ -997,17 +864,19 @@ public final class CrucibleCalculator {
             : "(" + (index + 1) + "/" + candidates.size() + ")";
 
         // A blank row between "what is in the pot" and "what to do about it". The box had grown to a
-        // flat wall of a dozen-odd lines - composition, result, target, plan, ore counts, caveats,
-        // picker - with nothing telling the eye where one thought ended and the next began, and the
-        // user said as much. One empty line is the cheapest possible fix and cannot go wrong: it is a
-        // plain Line, so it measures and draws through the same path as every other row and costs one
-        // row of the vertical budget like every other row, and it is not built with Line.row, so it
-        // records no click rectangle and is not selectable.
+        // flat wall of a dozen-odd lines - composition, result, target, plan, caveats, picker - with
+        // nothing telling the eye where one thought ended and the next began, and the user said as
+        // much. One empty line is the cheapest possible fix and cannot go wrong: it is a plain Line,
+        // so it measures and draws through the same path as every other row and costs one row of the
+        // vertical budget like every other row, and it is not built with Line.row, so it records no
+        // click rectangle and is not selectable.
         //
-        // Deliberately only one, and deliberately here rather than also above the picker: the picker
-        // already has its own "Click a target:" heading doing that job, and appendTargetRows budgets
-        // its rows to the exact pixel - slipping an extra line into that arithmetic is how the
-        // interactive rows got silently trimmed the first time.
+        // Deliberately only one, and deliberately not repeated above the picker. The picker used to
+        // have a "Click a target:" heading separating it and no longer does, so a second blank line
+        // is the obvious thing to reach for - but appendTargetRows budgets its rows to the exact
+        // pixel out of what is left after these fixed lines, so every line added here is a row taken
+        // straight off the bottom of the target list. Slipping an extra line into that arithmetic is
+        // how the interactive rows got silently trimmed the first time.
         lines.add(new Line("", theme.muted()));
         lines.add(new Line("Target: " + fluidName(target.result()) + " " + mode, theme.muted()));
 
@@ -1016,18 +885,32 @@ public final class CrucibleCalculator {
         // rather than the plan. It also keeps the top of the box byte-for-byte the layout that
         // shipped, with the picker appended below it.
         appendPlan(lines, target, amounts, total, theme);
-        return new TargetList(candidates, index, true);
+        return new TargetList(candidates, index);
     }
 
     /**
-     * Appends the clickable target rows - "Auto", then a window over the candidate alloys - sized to
+     * Appends the clickable target rows - a window over the candidate alloys, then "Auto" - sized to
      * a given number of rows and never exceeding it.
      *
-     * <p>Only the rows themselves are marked selectable. The heading and the "+N more" line are
-     * ordinary text, so a click on either does nothing and is not swallowed - a click that visibly
-     * lands on a label and silently eats itself is worse than one that falls through.
+     * <p>Only the rows themselves are marked selectable. The "+N more" line is ordinary text, so a
+     * click on it does nothing and is not swallowed - a click that visibly lands on a label and
+     * silently eats itself is worse than one that falls through.
      *
-     * <p><b>Why a sliding window and not just the first eight.</b> The cycle key steps through every
+     * <p><b>Why there is no heading above the rows.</b> There was one - a muted "Click a target:" -
+     * and it was removed because it was paying a whole row of a tight budget to say something the
+     * rows themselves say the first time anyone moves the cursor over them, which is when they
+     * highlight. Discoverability is worth a row exactly once per player; the row was being charged
+     * for on every frame thereafter, and on a short game window it was charged out of the target list
+     * it was labelling.
+     *
+     * <p><b>Why "Auto" is last.</b> It used to sit at the top, which read as a recommendation - the
+     * first thing in a list is where the eye starts, and a list that opens on "Auto" reads as though
+     * auto is what you are meant to want. It is not: it is the reset, the way back to letting the mod
+     * choose, and lists conventionally put the reset at the bottom. Moving it there also means the
+     * alloy names start at the top of the block, so the list the player is actually reading is not
+     * indented one row down by a control.
+     *
+     * <p><b>Why a sliding window and not just the first five.</b> The cycle key steps through every
      * candidate, including the ones past the cap. If the window were pinned to the top of the list, a
      * player who cycled to candidate twelve would be looking at a list with nothing marked on it and
      * no clue where they were. The window instead follows the selection, so the selected row is
@@ -1052,15 +935,25 @@ public final class CrucibleCalculator {
      *
      * <p><b>What the budget buys, in priority order.</b> The selected row first - it is the one the
      * player is looking for, so it survives every other loss, and at one row of room it is the
-     * <em>only</em> thing emitted. Then the "Auto" row, pinned at the top as it has always been.
-     * Then as many candidates around the selection as fit, up to the cap. Then, last and only if a
-     * row is genuinely spare, the "+N more" indicator - which is paid for out of this budget rather
-     * than added on top of it, so it can never push the box past the height it was measured for.
+     * <em>only</em> thing emitted. Then the "Auto" row, pinned at the bottom. Then as many candidates
+     * around the selection as fit, up to the cap. Then, last and only if a row is genuinely spare,
+     * the "+N more" indicator - which is paid for out of this budget rather than added on top of it,
+     * so it can never push the box past the height it was measured for.
+     *
+     * <p><b>The row arithmetic, and why it is what it is.</b> {@code avail} used to be
+     * {@code room - 1}: the heading was emitted unconditionally and took its row off the top before
+     * anything else was counted. With the heading gone there is nothing to deduct, so
+     * {@code avail == room} and every term below it - {@code candRoom}, the window, the "+N more"
+     * decrement, {@code maxStart}, {@code scrollMax} - is unchanged and still adds up to exactly
+     * {@code avail}. The one visible consequence is at the bottom of the range: a budget of one row
+     * used to buy a heading and nothing under it, which is why {@link #layout} refused to draw a
+     * picker below two rows, and now buys one real clickable row, which is why it draws one from one
+     * row up.
      *
      * @param out       the visible line list being assembled; rows are appended to it
      * @param targets   the candidates and the selected index, as {@link #appendCalculator} produced
-     * @param room      how many rows are available for the whole picker, heading included; the caller
-     *                  guarantees at least 2, which is the least that buys a heading and one row
+     * @param room      how many rows are available for the whole picker; the caller guarantees at
+     *                  least 1, which is the least that buys a single row
      */
     private static void appendTargetRows(
         List<Line> out, TargetList targets, int room, OverlayTheme theme
@@ -1070,11 +963,9 @@ public final class CrucibleCalculator {
         // Non-empty: appendCalculator returns a null TargetList rather than an empty one.
         final int size = candidates.size();
 
-        // Says what the rows are AND that they are clickable. Discoverability is the whole reason the
-        // rows exist; a list nobody realises is interactive is just a longer box.
-        out.add(new Line("Click a target:", theme.muted()));
-        // At least 1 - see the @param contract on room.
-        final int avail = room - 1;
+        // The whole budget, with nothing deducted: there is no heading to pay for. At least 1 - see
+        // the @param contract on room.
+        final int avail = room;
 
         if (avail == 1) {
             // One row, and it goes to the selection. Everything else - the Auto row, the other
@@ -1082,16 +973,21 @@ public final class CrucibleCalculator {
             // key; a selected row they cannot see is not, because then nothing on screen says where
             // in the list they are. This is the case the whole method is shaped around.
             out.add(index < 0
-                ? autoRow(candidates, true, targets.autoResolves(), theme)
+                ? autoRow(true, theme)
                 : candidateRow(candidates, index, true, theme));
             return;
         }
 
-        // avail >= 2 from here, so the Auto row is affordable and so is at least one candidate under
+        // avail >= 2 from here, so the Auto row is affordable and so is at least one candidate above
         // it. Auto is a row like any other so that getting back to it is one click, the same gesture
-        // as leaving it. It names what auto currently resolves to, which is what makes it a choice
-        // rather than a mystery.
-        out.add(autoRow(candidates, index < 0, targets.autoResolves(), theme));
+        // as leaving it.
+        //
+        // Its row is RESERVED here and EMITTED at the end of this method, because it now sits below
+        // the candidates. Reserving it up front is what keeps the budget arithmetic identical to when
+        // it was emitted here: candRoom is what is left for the scrolling part of the list either
+        // way, so the window sizing, the "+N more" decrement and scrollMax are all untouched by the
+        // move. Nothing between here and the emission can return early, so the row cannot be
+        // reserved and then not drawn.
         final int candRoom = avail - 1;
 
         // The window is the smallest of three things: how many candidates there are, the cap, and how
@@ -1121,8 +1017,10 @@ public final class CrucibleCalculator {
             // about what is on the other side of it, and centring is what makes the next press of
             // the cycle key show its destination before it gets there.
             //
-            // index < 0 is auto, which is candidate 0 - so the top of the list, which is also where
-            // the clamp would have sent a negative anyway.
+            // index < 0 is auto, and auto RESOLVES to candidate 0 - so the top of the list, which is
+            // also where the clamp would have sent a negative anyway. That is about where auto's own
+            // pick lives in the candidate list and has nothing to do with where the Auto row is
+            // drawn; moving that row to the bottom does not move what it resolves to.
             final int centred = index < 0 ? 0 : index - (window - 1) / 2;
             start = Math.max(0, Math.min(centred, maxStart));
             // Consumed here rather than at the moment of the selection change, because this is the
@@ -1157,8 +1055,17 @@ public final class CrucibleCalculator {
             // reason to try the wheel over it. The count is of everything not currently shown, above
             // and below - it answers "how much of this list am I not looking at", which stays true
             // wherever the window happens to be sitting.
+            //
+            // Directly under the candidates and above Auto, not below it: it describes the scrolling
+            // window, so it has to touch the thing it is counting. Under the Auto row it would read
+            // as "there are N more after Auto", which is the one thing it does not mean.
             out.add(new Line(INDENT + "+" + hidden + " more (scroll)", theme.muted()));
         }
+
+        // Last, in the row reserved for it above. A fixed footer under a list that scrolls: the
+        // candidates above it change as the wheel turns, Auto never does, and the reset option
+        // sitting still at the bottom is what makes that difference visible.
+        out.add(autoRow(index < 0, theme));
     }
 
     /**
@@ -1169,27 +1076,24 @@ public final class CrucibleCalculator {
      * one-row case and the normal case - and two copies of a row's text and colour rules is two
      * places for them to drift apart.
      *
-     * <p><b>Why the label is an arrow and not a bracket.</b> It used to read {@code Auto (Brass)},
-     * and a name in brackets after a word is how this box - and most of the game - writes a
-     * qualifier on that word, so it was read as "the Brass kind of auto" rather than "auto, which
-     * currently comes out as Brass". {@code Auto -> Brass} cannot be read the second way: the arrow
-     * already means "resolves to" everywhere else in this overlay, on the result line and in the
-     * plan. It is also two characters shorter than the brackets, which the box's width budget cares
-     * about more than the reader does.
+     * <p><b>Why the label is the bare word.</b> It has read {@code Auto (Brass)} and then
+     * {@code Auto -> Brass}, both of which named the alloy auto currently resolves to. Naming it was
+     * the wrong job for this row: the alloy is already named in full on the {@code Target:} line
+     * above, with {@code (auto)} next to it saying who chose it, so the row was a second copy of that
+     * answer competing for width in a box whose width is set by translated metal names. What the row
+     * is for is being the thing you click to get back to auto, and {@code Auto} says that.
+     *
+     * <p><b>Where the "auto has not chosen anything" case went.</b> It used to be carried into here
+     * as a flag, because {@code Auto -> <whatever sorted first>} on an empty crucible would have been
+     * a false recommendation - a real bug, and the reason the flag existed. A label that never names
+     * an alloy cannot reproduce it under any value of that flag, so the guard is now structural
+     * rather than conditional. The information itself has not been dropped: on an empty crucible with
+     * nothing selected {@link #appendCalculator} still prints "Pick a target below" and still prints
+     * no {@code Target:} line, which says it plainer than a qualifier on this row ever did.
      */
-    private static Line autoRow(
-        List<AlloyRecipe> candidates, boolean active, boolean resolves, OverlayTheme theme
-    ) {
-        // Naming an alloy here is only honest when auto actually resolved to one. On an empty
-        // crucible it deliberately does not - see appendCalculator - so the row is a bare "Auto"
-        // rather than "Auto -> <whatever sorted first>", which would put back the false
-        // recommendation the arrow was introduced to make readable.
-        // candidates is non-empty, so element 0 - what auto resolves to - always exists.
-        final String label = resolves
-            ? "Auto -> " + fluidName(candidates.get(0).result())
-            : "Auto";
+    private static Line autoRow(boolean active, OverlayTheme theme) {
         return Line.row(
-            (active ? ACTIVE_MARKER : INDENT) + label,
+            INDENT + "Auto",
             active ? theme.next() : theme.text(),
             null);
     }
@@ -1197,13 +1101,17 @@ public final class CrucibleCalculator {
     /**
      * One candidate row. next() against text() is the same "this is the one that matters" pairing the
      * anvil overlay uses for its next press, so the two overlays mean the same thing by colour.
+     *
+     * <p>Colour is the whole of the active marking - the indent is the same on every row, active or
+     * not. See the class javadoc for why the {@code "> "} prefix that used to sit in front of it is
+     * gone.
      */
     private static Line candidateRow(
         List<AlloyRecipe> candidates, int i, boolean active, OverlayTheme theme
     ) {
         final Fluid result = candidates.get(i).result();
         return Line.row(
-            (active ? ACTIVE_MARKER : INDENT) + fluidName(result),
+            INDENT + fluidName(result),
             active ? theme.next() : theme.text(),
             result);
     }
@@ -1235,23 +1143,7 @@ public final class CrucibleCalculator {
     }
 
     /**
-     * Appends the per-metal ingot counts for one target - and, under each, the whole-ore counts that
-     * reach the same target from raw ore instead - or the reason there are none.
-     *
-     * <p><b>What the ore line means.</b> Each grade's figure is its own complete plan, not a share of
-     * one: {@code ore: 53P / 32N / 23R} under Copper says "53 poor copper ore in the all-poor plan,
-     * or 32 normal in the all-normal plan, or 23 rich in the all-rich plan". They are alternatives,
-     * and mixing grades is not what any of the three numbers describes.
-     *
-     * <p><b>When a grade is omitted.</b> Whenever the answer would be a guess: the pack has no
-     * detected yield for that grade on one of the target's metals, the metals' yields for that grade
-     * disagree so there is no single unit volume to search in (see {@link #oreVolumeFor}), or the
-     * search finds no plan inside {@link #MAX_ORE_TO_ADD}. A grade dropping out costs the player one
-     * of three numbers; a grade printed from an assumption costs them a crucible.
-     *
-     * <p><b>Why no ore lines under "Already there".</b> A plan of zero ingots means the alloy already
-     * forms. Ore counts there would be a complete, correct plan for reaching a state the crucible is
-     * already in, printed as though it were something to go and do.
+     * Appends the per-metal ingot counts for one target, or the reason there are none.
      */
     private static void appendPlan(
         List<Line> lines, AlloyRecipe target, Map<Fluid, Double> amounts, int total, OverlayTheme theme
@@ -1292,50 +1184,18 @@ public final class CrucibleCalculator {
             return;
         }
 
-        // Whether the ingot plan asks for anything at all. Computed before the listing loop because
-        // it gates the ore solves entirely: an all-zero plan is "Already there", and there is no
-        // ore route worth printing to somewhere the crucible has already arrived.
-        boolean anyIngots = false;
-        for (final int count : counts) {
-            if (count > 0) {
-                anyIngots = true;
-                break;
-            }
-        }
-
-        // Read live, like every other option this class consults, so switching it off in the config
-        // screen takes the lines away on the next frame. OrePlans.NONE yields a null line for every
-        // component, so the loop below needs no second test for the option.
-        final OrePlans ore = anyIngots && AnvilSolverConfig.SHOW_ORE_COUNTS.get()
-            ? orePlans(target, ranges, amounts, total)
-            : OrePlans.NONE;
-
         int listed = 0;
         for (int i = 0; i < counts.length; i++) {
-            final String oreLine = ore.line(i);
-            if (counts[i] <= 0 && oreLine == null) {
+            if (counts[i] <= 0) {
                 // Metals already in range and needing nothing are omitted rather than printed as
                 // "0 ingots": the box has a tight height budget and a zero is not an instruction.
                 continue;
             }
             listed++;
-            // "0 ingots" IS printed when an ore plan needs this metal and the ingot plan does not,
-            // which the differing unit volumes make genuinely possible: the two plans finish at
-            // different totals, so a component that is already in range at one may not be at the
-            // other. Dropping the row would silently under-report the ore plan, and dropping the ore
-            // line would print a plan that is short a metal - so the zero is kept and is, uniquely
-            // here, informative, because the line beneath it says what to add instead.
             lines.add(new Line(
                 INDENT + fluidName(ranges.get(i).fluid()) + "  " + counts[i]
                     + (counts[i] == 1 ? " ingot" : " ingots"),
                 theme.next()));
-            if (oreLine != null) {
-                // text(), not next(): the ingot count is the headline answer and the ore counts are
-                // the alternative route to it, so they sit one step down the visual hierarchy. Not
-                // muted() either - muted is what this box uses for labels and captions, and these are
-                // numbers the player is going to act on.
-                lines.add(new Line(ORE_INDENT + oreLine, theme.text()));
-            }
         }
         if (listed == 0) {
             // A feasible plan of zero ingots means every component is already inside its range.
@@ -1552,206 +1412,6 @@ public final class CrucibleCalculator {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Ore yields
-    // ---------------------------------------------------------------------------------------------
-
-    /**
-     * The detected ore yields for one metal, or null when this pack has no ore that melts into it.
-     *
-     * <p>The whole table is built by one sweep on first use and then served from
-     * {@link #oreYieldCache}, with the same per-level invalidation - and the same {@code /reload}
-     * limit - as {@link #ingotVolumeOf}.
-     *
-     * <p>Never throws. Every failure - no world, a sweep that blows up on some pack's data - answers
-     * null, and null means the ore line is simply not drawn.
-     */
-    @Nullable
-    private static OreYields oreYieldsOf(@Nullable Fluid fluid) {
-        if (fluid == null) {
-            return null;
-        }
-        // Same reason ingotVolumeOf checks it: this runs from a render event, which can fire with no
-        // world behind it, and nothing is cached from that state.
-        final ClientLevel level = Minecraft.getInstance().level;
-        if (level == null) {
-            return null;
-        }
-
-        final WeakReference<ClientLevel> owner = oreYieldLevel;
-        if (owner == null || owner.get() != level) {
-            oreYieldCache.clear();
-            oreYieldsScanned = false;
-            oreYieldLevel = new WeakReference<>(level);
-        }
-
-        if (!oreYieldsScanned) {
-            // Raised first, so that neither an empty result nor a throw can put this back into the
-            // sweep on the very next frame. A pack this cannot read is read once and then left alone.
-            oreYieldsScanned = true;
-            try {
-                oreYieldCache.putAll(detectOreYields());
-            } catch (final NullPointerException | IllegalStateException e) {
-                // Nothing to do but leave the table as far as it got, which is to say usually empty.
-                // An overlay that draws no ore line is the intended failure; one that throws out of a
-                // render event throws again on every frame for as long as the screen is open.
-                oreYieldCache.clear();
-            }
-        }
-        return oreYieldCache.get(fluid);
-    }
-
-    /**
-     * Builds the whole metal-to-ore-yield table in one pass over the item registry.
-     *
-     * <p><b>Why it sweeps items and not recipes.</b> The obvious shape - walk the heating recipes,
-     * keep the ones whose output fluid is the metal in question - founders on the fact that a heating
-     * recipe's <em>input</em> is an {@code Ingredient}, and the ore's grade is a property of the item
-     * on the input side, not of the fluid on the output side. Going from the item registry instead
-     * means the grade is read from the thing that actually carries it, and it uses only the two calls
-     * {@link #detectIngotVolume} already relies on and that are proven in game -
-     * {@code HeatingRecipe.getRecipe} and {@code getDisplayOutputFluid} - rather than an accessor
-     * whose shape would have to be assumed.
-     *
-     * <p><b>What counts as an ore.</b> An item whose registry path starts with {@code ore/} and whose
-     * remaining name starts with one of {@link #GRADE_PREFIXES}. That is TFC's own convention, and it
-     * is checked on the path only, so both {@code tfc:ore/poor_hematite} and an addon's
-     * {@code someaddon:ore/rich_whatever} are read the same way. Ungraded ore items -
-     * {@code ore/small_native_copper}, {@code ore/bituminous_coal} - carry no grade prefix and are
-     * skipped, which is correct: they are not what the ore line is offering.
-     *
-     * <p><b>Which metal an ore belongs to is never guessed.</b> It is whatever fluid the ore's own
-     * heating recipe actually produces. Ore items are named after the ore rather than the metal -
-     * copper comes out of {@code native_copper}, {@code malachite} and {@code tetrahedrite}, iron out
-     * of {@code hematite}, {@code magnetite} and {@code limonite} - so there is no name to derive it
-     * from, and this way there is no need for one.
-     *
-     * <p><b>Disagreement between ore types.</b> Three different copper ores should all yield the same
-     * mB at the same grade, and in TFC they do. If a pack makes them differ, the commonest value wins
-     * and the grade is flagged so the display can mark the number as a majority reading rather than a
-     * fact. Ties go to the smaller amount, purely so the result does not depend on registry order.
-     *
-     * <p>Cost is one walk of the item registry - a few thousand string comparisons - plus one recipe
-     * lookup per graded ore item, of which a pack has a few dozen. Paid once per world, on the first
-     * frame a crucible is open.
-     */
-    private static Map<Fluid, OreYields> detectOreYields() {
-        final Map<Fluid, OreTally> tallies = new HashMap<>();
-
-        for (final ResourceLocation id : BuiltInRegistries.ITEM.keySet()) {
-            if (id == null) {
-                continue;
-            }
-            final String path = id.getPath();
-            if (!path.startsWith(ORE_PATH_PREFIX)) {
-                continue;
-            }
-            final int grade = gradeOf(path.substring(ORE_PATH_PREFIX.length()));
-            if (grade < 0) {
-                continue;
-            }
-            // Defaulted registry: an id it does not know answers AIR rather than null. Both are
-            // checked, as they are in detectIngotVolume, because AIR has no business reaching a
-            // recipe lookup - though an id taken from the registry's own key set cannot be unknown.
-            final Item item = BuiltInRegistries.ITEM.get(id);
-            if (item == null || item == Items.AIR) {
-                continue;
-            }
-
-            final HeatingRecipe recipe;
-            try {
-                // Narrow catch, same as everywhere else this reaches into TFC's recipe cache: a TFC
-                // whose internals this mod no longer matches must cost the ore line, not the frame.
-                recipe = HeatingRecipe.getRecipe(new ItemStack(item));
-            } catch (final NullPointerException | IllegalStateException e) {
-                continue;
-            }
-            if (recipe == null) {
-                // A graded ore with no heating recipe. Nothing to read, and nothing wrong.
-                continue;
-            }
-
-            final FluidStack output = recipe.getDisplayOutputFluid();
-            if (output == null || output.isEmpty()) {
-                // Melts into an item rather than a fluid, which is not an ore this can use.
-                continue;
-            }
-            final Fluid fluid = output.getFluid();
-            final int amount = output.getAmount();
-            if (fluid == null || amount <= 0) {
-                continue;
-            }
-            tallies.computeIfAbsent(fluid, key -> new OreTally()).add(grade, amount);
-        }
-
-        final Map<Fluid, OreYields> yields = new HashMap<>();
-        for (final Map.Entry<Fluid, OreTally> entry : tallies.entrySet()) {
-            yields.put(entry.getKey(), entry.getValue().reduce());
-        }
-        return yields;
-    }
-
-    /**
-     * The grade index of an ore item's name, or -1 if it carries no grade prefix.
-     *
-     * @param name the item's registry path with {@link #ORE_PATH_PREFIX} already removed
-     */
-    private static int gradeOf(String name) {
-        for (int grade = 0; grade < GRADE_COUNT; grade++) {
-            if (name.startsWith(GRADE_PREFIXES[grade])) {
-                return grade;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * The single unit volume an ore solve at this grade can work in, or a zero volume meaning "do not
-     * offer this grade".
-     *
-     * <p><b>Why every component has to agree, when the ingot path settles for a caveat.</b> The same
-     * constraint applies for the same reason - {@link #solveIngots} needs one scalar {@code V}, see
-     * {@link #chooseIngotVolume} - but the honest failure is different. The ingot path has nowhere
-     * else to go: it is the whole answer, so it prints the counts and names the assumption they rest
-     * on. The ore line is an extra, and it has three of them; dropping the one grade that cannot be
-     * answered cleanly costs the player nothing they had, whereas spending a line on
-     * "(assumes copper-size ore)" under every metal would cost the picker its rows. So a grade whose
-     * metals disagree, or whose metals are not all detectable, is simply not offered.
-     *
-     * @param ranges the target's components; non-empty, as the caller has already checked
-     * @param grade  the grade index to price
-     */
-    private static OreVolume oreVolumeFor(List<AlloyRange> ranges, int grade) {
-        int volume = 0;
-        boolean disputed = false;
-        for (final AlloyRange range : ranges) {
-            // Datapack data. A malformed component means this grade cannot be priced, which is a
-            // dropped line rather than a thrown exception.
-            if (range == null) {
-                return OreVolume.NONE;
-            }
-            final OreYields yields = oreYieldsOf(range.fluid());
-            if (yields == null) {
-                // No ore in this pack melts into this metal - the ordinary case for an alloy
-                // component that is itself an alloy, e.g. bronze inside bismuth bronze.
-                return OreVolume.NONE;
-            }
-            final int amount = yields.mbFor(grade);
-            if (amount <= 0) {
-                return OreVolume.NONE;
-            }
-            if (volume == 0) {
-                volume = amount;
-            } else if (volume != amount) {
-                // Two metals in the same alloy whose ore of this grade yields different amounts.
-                // There is no single V to search in, so there is no answer to print.
-                return OreVolume.NONE;
-            }
-            disputed |= yields.isDisputed(grade);
-        }
-        return volume > 0 ? new OreVolume(volume, disputed) : OreVolume.NONE;
-    }
-
-    // ---------------------------------------------------------------------------------------------
     // The ingot solve
     // ---------------------------------------------------------------------------------------------
 
@@ -1795,23 +1455,18 @@ public final class CrucibleCalculator {
      * ingots went to and the derivation would not hold. Where that one number comes from, and what
      * happens on the packs where the metals disagree, is {@link #chooseIngotVolume}'s problem.
      *
-     * <p><b>{@code V} is also what makes this answer in ore.</b> Nothing above says the unit has to
-     * be an ingot - only that it is one fixed volume. Handing it an ore grade's yield therefore
-     * solves for whole ore of that grade, in exactly the same search, with exactly the same guarantee
-     * that every component lands in range. That is why the ore counts are not, and must not be, the
-     * ingot answer divided by a yield: division rounds, and a rounded-up count can push a component
-     * past its maximum, which is a plan that does not work rather than a plan that is slightly off.
-     *
-     * <p><b>Why the cap is a parameter.</b> Because the unit is. An ore-based plan needs several
-     * times as many units as the ingot plan for the same target - see {@link #MAX_ORE_TO_ADD} - so
-     * one shared ceiling would either cut ordinary ore answers short or make every ingot search do
-     * several times the work it needs to. The arithmetic underneath is untouched: this is the loop's
-     * upper bound and nothing else, and the ingot call site passes {@link #MAX_INGOTS_TO_ADD}, so the
-     * ingot answers are the same answers they have always been.
+     * <p><b>Why the unit and the cap are parameters when there is only one caller.</b> Nothing in the
+     * derivation above says the unit has to be an ingot - only that it is one fixed volume - so this
+     * is written as a solve in whole units of size {@code V}, up to {@code maxUnits} of them, and
+     * {@link #solvePlan} supplies an ingot volume and {@link #MAX_INGOTS_TO_ADD}. Keeping the
+     * generalisation costs nothing: {@code maxUnits} is the loop's upper bound and {@code unitVolume}
+     * the size of one unit, both of which the arithmetic already had to name. It also keeps the
+     * proven bit provably unchanged - the search is byte-for-byte the one that was verified, whatever
+     * unit is handed to it - rather than having the ingot case hardcoded back into it and re-argued.
      *
      * @param total the current total in mB, zero for an empty crucible
-     * @param unitVolume one unit's volume in mB - an ingot's, or an ore grade's yield; guaranteed
-     *                   positive by the caller, and rejected here as well rather than trusted
+     * @param unitVolume one unit's volume in mB, in practice an ingot's; guaranteed positive by the
+     *                   caller, and rejected here as well rather than trusted
      * @param maxUnits the most units to consider adding; a non-positive value simply finds nothing
      * @return units to add, indexed to match {@code ranges}, or null if there is no answer within
      *         {@code maxUnits}
@@ -1990,60 +1645,6 @@ public final class CrucibleCalculator {
     }
 
     /**
-     * One candidate's ore plans - up to three, one per grade - solved once per crucible state and
-     * reused until it changes.
-     *
-     * <p>Shares {@link #refreshSolveCache} with {@link #solvePlan}, which is the point: the ore plans
-     * depend on precisely the same four inputs as the ingot plans, so they are invalidated by the same
-     * comparison in the same place rather than by a second rule that could drift out of step with it.
-     * Why the entries live in their own map is {@link #oreSolveCache}'s note.
-     *
-     * <p>The ingot plan for this recipe has always been computed already by the time this runs -
-     * {@code findCandidates} solves every candidate before a target is even chosen - so the refresh
-     * below is a hit and this method's own miss costs three searches and nothing else.
-     *
-     * <p>Never returns null and never throws; "no grade could be answered" is {@link OrePlans#NONE},
-     * and it is cached like any other answer so an unanswerable target is not re-searched every frame.
-     */
-    private static OrePlans orePlans(
-        AlloyRecipe recipe, List<AlloyRange> ranges, Map<Fluid, Double> amounts, int total
-    ) {
-        refreshSolveCache(amounts, total);
-
-        final OrePlans cached = oreSolveCache.get(recipe);
-        if (cached != null) {
-            return cached;
-        }
-
-        final int[][] byGrade = new int[GRADE_COUNT][];
-        final boolean[] disputed = new boolean[GRADE_COUNT];
-        boolean any = false;
-        for (int grade = 0; grade < GRADE_COUNT; grade++) {
-            final OreVolume volume = oreVolumeFor(ranges, grade);
-            if (volume.volume() <= 0) {
-                // This grade cannot be priced for this alloy - see oreVolumeFor. Leaving the slot null
-                // is what drops it from the line, which is the whole "omit just that grade" rule.
-                continue;
-            }
-            // The same verified search the ingot plan uses, with the ore grade's yield as its unit
-            // volume - so these are exact whole-ore counts that land every component in range, not
-            // the ingot answer scaled up.
-            final int[] plan = solveIngots(ranges, amounts, total, volume.volume(), MAX_ORE_TO_ADD);
-            if (plan == null) {
-                // No plan inside MAX_ORE_TO_ADD. Same rule: drop the grade, keep the others.
-                continue;
-            }
-            byGrade[grade] = plan;
-            disputed[grade] = volume.disputed();
-            any = true;
-        }
-
-        final OrePlans plans = any ? new OrePlans(byGrade, disputed) : OrePlans.NONE;
-        oreSolveCache.put(recipe, plans);
-        return plans;
-    }
-
-    /**
      * Drops every cached plan if anything the plans were computed from has changed.
      *
      * <p>All four inputs are compared, not just the obvious two. The contents and the total are what
@@ -2068,10 +1669,6 @@ public final class CrucibleCalculator {
         }
 
         solveCache.clear();
-        // Cleared on the same condition, in the same place, from the same key - the ore plans depend
-        // on exactly the same four inputs, so they must not be able to survive a change the ingot
-        // plans did not.
-        oreSolveCache.clear();
         // A copy, so the key cannot change with the map it was taken from - see the field.
         solveCacheAmounts = new HashMap<>(amounts);
         solveCacheTotal = total;
@@ -2422,10 +2019,13 @@ public final class CrucibleCalculator {
      * already showing the player everything it can. The target picker is fitted into whatever is left
      * by {@link #appendTargetRows}, which is handed the room rather than left to guess it.
      *
-     * <p><b>Why the picker is all-or-nothing.</b> Below two rows there is no honest picker: one row
-     * buys a heading with nothing under it, which is a label announcing an interaction that is not
-     * there. Dropping the block whole is the better failure - the plan above it is still on screen,
-     * the cycle key still works, and nothing invites a click that cannot land.
+     * <p><b>Why one row is now enough.</b> This used to demand two, because the picker opened with a
+     * "Click a target:" heading and one row therefore bought a label with nothing under it - a
+     * caption announcing an interaction that was not on screen. With the heading gone the first row
+     * of the budget is a real, clickable, correctly marked row, so there is no longer a size at which
+     * the picker is a promise it cannot keep. Zero rows is still nothing at all, and it still fails
+     * by dropping the block whole rather than by trimming it: the plan above stays on screen and the
+     * cycle key still works.
      *
      * @param maxRows rows the window has room for; at least 1, as {@link #drawBox} has checked
      * @return the lines to draw, in order, never longer than {@code maxRows}
@@ -2434,11 +2034,11 @@ public final class CrucibleCalculator {
         final List<Line> head = content.lines();
         final TargetList targets = content.targets();
         // What is left for the picker once the fixed lines have taken their share. Negative when the
-        // fixed lines alone overrun, which the >= 2 test below rejects along with everything else too
-        // small to be worth drawing.
+        // fixed lines alone overrun, which the >= 1 test below rejects along with a budget of exactly
+        // zero.
         final int room = maxRows - head.size();
 
-        if (targets != null && room >= 2) {
+        if (targets != null && room >= 1) {
             final List<Line> visible = new ArrayList<>(head);
             appendTargetRows(visible, targets, room, theme);
             if (visible.size() <= maxRows) {
@@ -2646,15 +2246,18 @@ public final class CrucibleCalculator {
      * effect - it resets a selection that has gone stale - and running that a second time against a
      * list built in a different pass is how the marked row and the selected target come to disagree.
      *
+     * <p>It used to carry a third component, {@code autoResolves}, saying whether auto had actually
+     * settled on a target - false only on an empty crucible with nothing selected. Its one consumer
+     * was the Auto row's label, which named the resolved alloy and had to be stopped from naming one
+     * that had not been chosen. That label is now the bare word {@code Auto} in every case, so there
+     * is no longer anything for the flag to suppress, and a component nothing reads is state that can
+     * only rot. The case it described is still reported, on the "Pick a target below" line
+     * {@link #appendCalculator} prints instead of a {@code Target:} line.
+     *
      * @param candidates the reachable alloys, best first; never empty
      * @param index      the selected candidate's index, or -1 for auto
-     * @param autoResolves whether auto actually resolved to a target. False only on an empty
-     *                     crucible with nothing selected, where no alloy is closer than any other
-     *                     and naming one would be a guess dressed as a recommendation. Carried
-     *                     rather than recomputed so the Auto row and the plan above it cannot
-     *                     disagree about whether a target exists.
      */
-    private record TargetList(List<AlloyRecipe> candidates, int index, boolean autoResolves) {
+    private record TargetList(List<AlloyRecipe> candidates, int index) {
     }
 
     /**
@@ -2669,167 +2272,6 @@ public final class CrucibleCalculator {
      * @param metal  display name of the metal {@code volume} was taken from
      */
     private record VolumeChoice(int volume, boolean mixed, String metal) {
-    }
-
-    /**
-     * One metal's detected ore yields, indexed by grade.
-     *
-     * <p>Both arrays are always {@link #GRADE_COUNT} long, so the accessors below need no length
-     * check beyond guarding a nonsense index. A zero in {@code mb} means "this pack has no ore of
-     * that grade for this metal", which is a normal answer - a metal may well have only one grade,
-     * or none at all, in which case there is no {@code OreYields} for it in the first place.
-     *
-     * @param mb        yield in mB per grade, or 0 for a grade this pack does not have
-     * @param disputed  per grade, whether the pack's own ore types disagreed on that yield and the
-     *                  value in {@code mb} is therefore the commonest reading rather than the only one
-     */
-    private record OreYields(int[] mb, boolean[] disputed) {
-
-        int mbFor(int grade) {
-            return grade >= 0 && grade < mb.length ? mb[grade] : 0;
-        }
-
-        boolean isDisputed(int grade) {
-            return grade >= 0 && grade < disputed.length && disputed[grade];
-        }
-    }
-
-    /**
-     * Vote counting for one metal while {@link #detectOreYields} sweeps the registry.
-     *
-     * <p>A mutable helper rather than a record, because it exists only for the duration of the sweep
-     * and is thrown away by {@link #reduce()}. It is a histogram rather than a single value because
-     * several ore items feed the same metal and the same grade - copper alone has three - and the
-     * only way to answer "what do they mostly say?" is to have counted what each of them said.
-     */
-    private static final class OreTally {
-
-        /** One yield-to-votes histogram per grade. Small by nature: at most a handful of ore types. */
-        private final List<Map<Integer, Integer>> votes = new ArrayList<>(GRADE_COUNT);
-
-        OreTally() {
-            for (int grade = 0; grade < GRADE_COUNT; grade++) {
-                votes.add(new HashMap<>());
-            }
-        }
-
-        void add(int grade, int amount) {
-            if (grade < 0 || grade >= GRADE_COUNT) {
-                return;
-            }
-            votes.get(grade).merge(amount, 1, Integer::sum);
-        }
-
-        /** The commonest yield per grade, with the grades whose ore types disagreed flagged. */
-        OreYields reduce() {
-            final int[] mb = new int[GRADE_COUNT];
-            final boolean[] disputed = new boolean[GRADE_COUNT];
-            for (int grade = 0; grade < GRADE_COUNT; grade++) {
-                final Map<Integer, Integer> hist = votes.get(grade);
-                if (hist.isEmpty()) {
-                    continue;
-                }
-                // More than one distinct yield reported for one metal at one grade. TFC never does
-                // this; a pack that does gets the majority reading and a mark on screen saying so.
-                disputed[grade] = hist.size() > 1;
-
-                int best = 0;
-                int bestVotes = 0;
-                for (final Map.Entry<Integer, Integer> entry : hist.entrySet()) {
-                    final int amount = entry.getKey();
-                    final int count = entry.getValue();
-                    // Ties break towards the smaller yield, purely so the answer does not depend on
-                    // the order the item registry happened to be walked in. Any deterministic rule
-                    // would do; what matters is that the box shows the same number every frame.
-                    if (count > bestVotes || (count == bestVotes && amount < best)) {
-                        best = amount;
-                        bestVotes = count;
-                    }
-                }
-                mb[grade] = best;
-            }
-            return new OreYields(mb, disputed);
-        }
-    }
-
-    /**
-     * The single unit volume one grade's ore solve works in, and whether the yield it came from was a
-     * majority reading rather than an agreed one.
-     *
-     * <p>A zero volume is the "do not offer this grade" answer, which is why {@link #NONE} exists as
-     * a shared instance rather than the callers passing null around.
-     *
-     * @param volume   the yield in mB shared by every component of the target, or 0 for "no answer"
-     * @param disputed true when at least one of those metals' ore types disagreed on it
-     */
-    private record OreVolume(int volume, boolean disputed) {
-
-        private static final OreVolume NONE = new OreVolume(0, false);
-    }
-
-    /**
-     * One target's ore plans: for each grade, either a complete plan in whole ore of that grade or
-     * nothing at all.
-     *
-     * <p>Each grade's array is a full, independent plan indexed to match the recipe's component list,
-     * exactly like {@link SolvePlan#counts()} - so the three grades are three alternative ways to
-     * reach the same alloy, not three parts of one route. A null slot is a grade that could not be
-     * answered without guessing, and it is drawn as nothing rather than as a placeholder.
-     *
-     * <p>Arrays are shared, not copied, on every read, under the same rule {@code SolvePlan} states:
-     * {@link #solveIngots} hands back a fresh array and nothing downstream writes to it. The generated
-     * {@code equals}/{@code hashCode} therefore compare by identity, which is why this type is only
-     * ever stored and read, never compared.
-     *
-     * @param counts   per grade, the plan in whole ore of that grade, or null for a grade not offered;
-     *                 the whole field is null when no grade could be answered
-     * @param disputed per grade, whether that grade's yield was a majority reading - marked on screen
-     */
-    private record OrePlans(@Nullable int[][] counts, boolean[] disputed) {
-
-        /** The shared "no grade could be answered" value; its {@link #line} is always null. */
-        private static final OrePlans NONE = new OrePlans(null, new boolean[GRADE_COUNT]);
-
-        /**
-         * The ore line for one component of the target, or null if no grade has anything to say about
-         * it - in which case no line is drawn, which is the "never print a placeholder" rule.
-         *
-         * <p>A grade contributes only when it has a plan <em>and</em> that plan asks for some of this
-         * particular metal. A zero is left out for the same reason the ingot list leaves zeroes out:
-         * it is not an instruction, and here it would also cost width on a line that has three
-         * numbers to fit.
-         *
-         * @param component index into the recipe's component list
-         */
-        @Nullable
-        String line(int component) {
-            if (counts == null || component < 0) {
-                return null;
-            }
-            final StringBuilder text = new StringBuilder();
-            for (int grade = 0; grade < GRADE_COUNT; grade++) {
-                final int[] plan = counts[grade];
-                if (plan == null || component >= plan.length) {
-                    continue;
-                }
-                final int units = plan[component];
-                if (units <= 0) {
-                    continue;
-                }
-                if (text.length() > 0) {
-                    text.append(" / ");
-                }
-                text.append(units).append(GRADE_LETTERS[grade]);
-                if (disputed[grade]) {
-                    // One character, because the alternative was a whole extra line saying the same
-                    // thing under every metal. What it means is spelled out in the option's tooltip,
-                    // and it never appears on a pack whose ore types agree - which is all of them
-                    // that this has any reason to expect.
-                    text.append('*');
-                }
-            }
-            return text.length() == 0 ? null : ORE_PREFIX + text;
-        }
     }
 
     /**

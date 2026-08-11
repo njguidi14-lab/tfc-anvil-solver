@@ -9,7 +9,6 @@ public final class AnvilSolverConfig {
     public static final ModConfigSpec.BooleanValue HIGHLIGHT_NEXT_BUTTON;
     public static final ModConfigSpec.BooleanValue SHOW_TEMPERATURE;
     public static final ModConfigSpec.BooleanValue SHOW_ALLOY_CALCULATOR;
-    public static final ModConfigSpec.BooleanValue SHOW_ORE_COUNTS;
     public static final ModConfigSpec.IntValue INGOT_VOLUME;
     public static final ModConfigSpec.IntValue OVERLAY_GAP;
     public static final ModConfigSpec.IntValue OVERLAY_Y;
@@ -54,12 +53,18 @@ public final class AnvilSolverConfig {
                 "Lists what is in the crucible as a percentage of the total, names the alloy it",
                 "currently makes, and works out the fewest whole ingots to melt in to reach a target",
                 "alloy - listed per metal, so the answer is something you can actually go and do.",
-                "The target defaults to Automatic, which picks whichever reachable alloy needs the",
-                "fewest ingots to finish - that is what 'closest' means here, rather than whichever",
-                "one the mix already resembles. Alloys with no answer at all are listed last.",
+                "The target defaults to Automatic, which picks the alloy the mix is closest to -",
+                "measured as how far each metal sits outside that alloy's allowed range, added up.",
+                "Ingot count only breaks ties, and alloys with no answer at all are listed last.",
+                "On an empty crucible Automatic picks nothing: with nothing in the pot no alloy is",
+                "closer than any other, so it asks you to choose instead of guessing.",
                 "Click a row in the list to choose a different target, scroll the wheel over the box",
                 "to reach the ones below it, or press the 'Cycle alloy target' key (default G,",
                 "rebindable under Controls) to step through them all and back to automatic.",
+                "The list shows up to five alloys at a time, fewer if the game window is too short,",
+                "with an 'Auto' row at the bottom to hand the choice back to the mod. The currently",
+                "selected row is the highlighted one. Anything past the five is counted on a",
+                "'+N more' line and reached by scrolling or by the cycle key.",
                 "Only alloys that contain everything already in the pot are offered, since metal can",
                 "be added but not taken back out. An empty crucible can reach any alloy, so it lists",
                 "the full recipe from scratch.",
@@ -69,31 +74,6 @@ public final class AnvilSolverConfig {
                 "Independent of the 'enabled' option above, which governs the anvil overlay only."
             )
             .define("showAlloyCalculator", true);
-
-        SHOW_ORE_COUNTS = builder
-            .comment(
-                "Also show raw ore counts under each metal in the alloy calculator.",
-                "Adds one short line per metal - for example 'ore: 53P / 32N / 23R' - giving the",
-                "whole poor, normal and rich ore to melt in instead of ingots. Early on you are",
-                "usually melting ore straight into the crucible rather than making ingots first, so",
-                "an answer in ingots alone is the wrong unit for that part of the game.",
-                "The three figures are alternatives, not parts of one plan: 53 poor ore OR 32 normal",
-                "OR 23 rich. Each is solved in whole ore of that grade by the same search that",
-                "produces the ingot counts, so every one of them lands the mix in range on its own.",
-                "They are not the ingot count divided by an ore's yield, which would round and could",
-                "overshoot.",
-                "Ore yields are detected from your own pack's heating recipes, exactly as ingot",
-                "volumes are, so a datapack or addon that changes them is followed automatically.",
-                "A grade is left out whenever it cannot be answered without guessing: no ore of that",
-                "grade for one of the alloy's metals, the metals' yields for that grade disagreeing,",
-                "or no whole-ore mix existing at all. If none of the three can be answered the line",
-                "is not drawn - a missing line means 'not known', never a wrong number.",
-                "A '*' after a figure means your pack's own ore types disagreed on that grade's yield",
-                "and the commonest value was used. TFC itself never does this.",
-                "Turn this off to keep the box shorter - on a short game window the extra lines come",
-                "out of the space the target list would otherwise use."
-            )
-            .define("showOreCounts", true);
 
         INGOT_VOLUME = builder
             .comment(
