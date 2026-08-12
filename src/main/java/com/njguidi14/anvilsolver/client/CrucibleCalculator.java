@@ -2040,10 +2040,19 @@ public final class CrucibleCalculator {
         final boolean useRight = fitsRight || (!fitsLeft && rightSpace >= leftSpace);
         final int x = useRight ? rightEdge : guiLeft - width - gap;
 
-        // A box wider than the whole window fits on neither side, and a large negative gap can push
-        // it off the left edge. Pinning the left edge at 0 keeps the start of every line readable,
-        // which matters more than an overrun on the right.
-        return Math.max(0, x);
+        // Pull the box back on screen if the chosen side cannot hold it.
+        //
+        // Without this the right-hand branch ran straight off the edge of the window, because nothing
+        // clamped left + width against screen.width - only the left edge was pinned. At 854x480 on
+        // GUI scale 2 the scaled screen is 427 wide and a centred GUI leaves about 122px a side, so a
+        // long alloy name took the tail of the box with it and there was no way to read it. Sliding
+        // it left overlaps the GUI, which is worth it: an overlapping box can be read, a clipped one
+        // cannot, and overlaying is what the negative-gap option already does deliberately.
+        final int onScreen = Math.min(x, screen.width - width);
+
+        // Then the left edge, last, so it wins if the box is wider than the entire window - at which
+        // point something has to be lost and it should be the end of each line rather than the start.
+        return Math.max(0, onScreen);
     }
 
     /**
