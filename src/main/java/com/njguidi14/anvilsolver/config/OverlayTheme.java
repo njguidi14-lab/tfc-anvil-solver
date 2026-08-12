@@ -41,7 +41,9 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFB9CDBC, // text
         0xFF4CAF6A, // next
         0xFFF2B8B3, // error
-        0x404CAF6A  // next fill - the next colour at ~25% alpha
+        0x404CAF6A,  // next fill - the next colour at ~25% alpha
+        0xFF00E5FF, // highlight - contrasts BOTH the green and red anvil buttons
+        0x5000E5FF  // highlight fill
     ),
 
     /**
@@ -64,7 +66,9 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFDCE4EE, // text - brightest neutral, well clear of both semantic colours
         0xFF4FA3E3, // next - medium blue, perceived brightness ~145
         0xFFFFC145, // error - amber, perceived brightness ~197
-        0x404FA3E3  // next fill - the next colour at ~25% alpha
+        0x404FA3E3,  // next fill - the next colour at ~25% alpha
+        0xFF00E5FF, // highlight - contrasts BOTH the green and red anvil buttons
+        0x5000E5FF  // highlight fill
     ),
 
     /**
@@ -81,7 +85,9 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFFFFFFF, // text
         0xFF33FF66, // next
         0xFFFF4D4D, // error
-        0x5533FF66  // next fill - slightly stronger than the other themes' 25%, still icon-legible
+        0x5533FF66,  // next fill - slightly stronger than the other themes' 25%, still icon-legible
+        0xFFFFFFFF, // highlight - contrasts BOTH the green and red anvil buttons
+        0x60FFFFFF  // highlight fill
     ),
 
     /**
@@ -100,7 +106,9 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFF9E9E9E, // text
         0xFFFFFFFF, // next - brightest by design; this is the whole signal
         0xFFD4D4D4, // error - above body text, below next
-        0x40FFFFFF  // next fill - the next colour at ~25% alpha
+        0x40FFFFFF,  // next fill - the next colour at ~25% alpha
+        0xFFFFFFFF, // highlight - contrasts BOTH the green and red anvil buttons
+        0x60FFFFFF  // highlight fill
     ),
 
     /**
@@ -119,7 +127,9 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFE8D5BC, // text - warm off-white
         0xFFFFB347, // next - hot amber
         0xFFE86A4B, // error - cooling red, clearly below the amber in brightness
-        0x40FFB347  // next fill
+        0x40FFB347,  // next fill
+        0xFF00E5FF, // highlight - contrasts BOTH the green and red anvil buttons
+        0x5000E5FF  // highlight fill
     ),
 
     /**
@@ -137,7 +147,9 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFCBD9E3, // text
         0xFF5FD0E0, // next - cyan
         0xFFF08A94, // error - soft rose
-        0x405FD0E0  // next fill
+        0x405FD0E0,  // next fill
+        0xFFFF6BD6, // highlight - contrasts BOTH the green and red anvil buttons
+        0x50FF6BD6  // highlight fill
     ),
 
     /**
@@ -155,7 +167,9 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFF8A8A8A, // text
         0xFFB8C9AE, // next - a desaturated green, present rather than bright
         0xFFC49A9A, // error - desaturated red, same treatment
-        0x30B8C9AE  // next fill - lighter than the others to match the theme's restraint
+        0x30B8C9AE,  // next fill - lighter than the others to match the theme's restraint
+        0xFF7FD4E0, // highlight - contrasts BOTH the green and red anvil buttons
+        0x407FD4E0  // highlight fill
     );
 
     private final int background;
@@ -165,9 +179,12 @@ public enum OverlayTheme implements TranslatableEnum {
     private final int next;
     private final int error;
     private final int nextFill;
+    private final int highlight;
+    private final int highlightFill;
 
     OverlayTheme(
-        int background, int border, int muted, int text, int next, int error, int nextFill
+        int background, int border, int muted, int text, int next, int error, int nextFill,
+        int highlight, int highlightFill
     ) {
         this.background = background;
         this.border = border;
@@ -176,6 +193,8 @@ public enum OverlayTheme implements TranslatableEnum {
         this.next = next;
         this.error = error;
         this.nextFill = nextFill;
+        this.highlight = highlight;
+        this.highlightFill = highlightFill;
     }
 
     /** Fill behind the overlay box. Partly transparent, so the GUI underneath still shows through. */
@@ -208,7 +227,31 @@ public enum OverlayTheme implements TranslatableEnum {
         return error;
     }
 
-    /** {@link #next()} at low alpha, used to tint the highlighted step button without hiding its icon. */
+    /**
+     * The outline drawn on the anvil's own step button for the next press.
+     *
+     * <p>A role of its own rather than reusing {@link #next()}, because the two answer to different
+     * backgrounds. {@code next()} sits on this box's near-black panel, where it only has to be
+     * legible. This one sits on TFC's step buttons, which are <em>themselves</em> red and green - the
+     * pushes and the hits - so a green {@code next()} outlined a green button in green and all but
+     * disappeared on exactly half of them.
+     *
+     * <p>Every palette therefore picks something that contrasts with red and green at once. Cyan for
+     * most, white where the theme is already achromatic, magenta for {@link #SLATE} whose own
+     * {@code next()} is cyan. Cyan is also the safe choice under red-green colour vision deficiency,
+     * which is the case that would otherwise be worst served: the button underneath is the thing
+     * being distinguished from, not just decorated.
+     */
+    public int highlight() {
+        return highlight;
+    }
+
+    /** {@link #highlight()} at low alpha, tinting the button without hiding its icon. */
+    public int highlightFill() {
+        return highlightFill;
+    }
+
+    /** {@link #next()} at low alpha. Retained for the crucible picker's hover wash. */
     public int nextFill() {
         return nextFill;
     }

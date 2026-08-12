@@ -444,9 +444,13 @@ public final class AnvilSolverClient {
         // Translucent tint first, then a two-pixel-thick border (outer ring plus an inset ring).
         // The icon underneath stays legible through the tint, and the thick border reads clearly at
         // any GUI scale.
-        graphics.fill(left, top, left + ICON_SIZE, top + ICON_SIZE, theme.nextFill());
-        graphics.renderOutline(left, top, ICON_SIZE, ICON_SIZE, theme.next());
-        graphics.renderOutline(left + 1, top + 1, ICON_SIZE - 2, ICON_SIZE - 2, theme.next());
+        // highlight(), not next(). This outline is drawn on TFC's own step buttons, and those buttons
+        // are themselves red and green - the pushes and the hits - so painting a green next() around
+        // a green button made the highlight all but vanish on half of them. highlight() is a separate
+        // palette role chosen to contrast with red and green at the same time.
+        graphics.fill(left, top, left + ICON_SIZE, top + ICON_SIZE, theme.highlightFill());
+        graphics.renderOutline(left, top, ICON_SIZE, ICON_SIZE, theme.highlight());
+        graphics.renderOutline(left + 1, top + 1, ICON_SIZE - 2, ICON_SIZE - 2, theme.highlight());
         pose.popPose();
     }
 
