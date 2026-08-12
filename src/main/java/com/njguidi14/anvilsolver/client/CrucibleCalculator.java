@@ -852,13 +852,15 @@ public final class CrucibleCalculator {
 
         final AlloyRecipe target = candidates.get(Math.max(index, 0));
 
-        // "(auto)" versus "(2/5)" is the whole point of showing this: the player has to be able to
-        // tell "the mod picked this" from "I picked this", and the fraction also says how many other
-        // choices exist. It is kept even though the picker below repeats it, because the picker is
-        // what shrinks on a short window and this one-line summary never does.
-        final String mode = index < 0
-            ? "(auto)"
-            : "(" + (index + 1) + "/" + candidates.size() + ")";
+        // No "(auto)" or "(2/5)" suffix here. It was defended on the grounds that the player has to
+        // be able to tell "the mod picked this" from "I picked this", and that the fraction says how
+        // many other choices exist - but the picker directly below already answers both, by which row
+        // is highlighted and by how many rows there are. Two answers to the same question is not
+        // twice as clear, and this was the noisiest thing left on a line the eye lands on first.
+        //
+        // The one case it covered alone was a window too short to draw the picker at all. That is a
+        // rare state whose real problem is the missing picker, not a missing caption, and it does not
+        // earn a permanent suffix on every frame that is not that state.
 
         // A blank row between "what is in the pot" and "what to do about it". The box had grown to a
         // flat wall of a dozen-odd lines - composition, result, target, plan, caveats, picker - with
@@ -875,7 +877,7 @@ public final class CrucibleCalculator {
         // straight off the bottom of the target list. Slipping an extra line into that arithmetic is
         // how the interactive rows got silently trimmed the first time.
         lines.add(new Line("", theme.muted()));
-        lines.add(new Line("Target: " + fluidName(target.result()) + " " + mode, theme.muted()));
+        lines.add(new Line("Target: " + fluidName(target.result()), theme.muted()));
 
         // Plan first, picker second, and the order is deliberate: the answer - which ingots to go and
         // melt - sits above the chooser, and it is the picker that gives ground on a short window
