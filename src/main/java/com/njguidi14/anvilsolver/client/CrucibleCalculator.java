@@ -19,6 +19,7 @@ import net.dries007.tfc.common.blockentities.CrucibleBlockEntity;
 import net.dries007.tfc.common.recipes.AlloyRecipe;
 import net.dries007.tfc.common.recipes.HeatingRecipe;
 import net.dries007.tfc.common.recipes.TFCRecipeTypes;
+import net.dries007.tfc.config.TFCConfig;
 import net.dries007.tfc.util.AlloyRange;
 import net.dries007.tfc.util.FluidAlloy;
 import net.minecraft.client.Minecraft;
@@ -1208,12 +1209,55 @@ public final class CrucibleCalculator {
             }
         }
 
+        // Capacity check. The solver optimises for the fewest units and knows nothing about how much
+        // the pot actually holds, so a high-dilution target on a part-full crucible can produce a
+        // plan that is arithmetically perfect and physically impossible - drop copper to 40% for
+        // Sterling Silver from 2000 mB of it and the answer needs 5000 mB of room in a 4000 mB pot.
+        // A plan the player cannot execute is exactly the "correct but useless" failure this overlay
+        // exists to avoid, so it says so rather than letting them melt half of it and find out.
+        //
+        // Read from TFC's own config rather than hardcoded: crucibleCapacity is a server config
+        // value, so a pack can change it and this follows.
+        final int planned = totalUnits(counts) * volume.volume();
+        if (planned > 0) {
+            final int capacity = crucibleCapacity();
+            if (capacity > 0 && total + planned > capacity) {
+                lines.add(new Line("Needs " + (total + planned) + " mB", theme.error()));
+                lines.add(new Line(INDENT + "pot holds " + capacity, theme.error()));
+            }
+        }
+
         if (volume.mixed()) {
             // The counts above are only right if every metal's ingot is the same size, because the
             // solve works from a single ingot volume - see solveIngots. This pack's metals disagree,
             // so rather than print a number that looks authoritative and is not, the box says which
             // metal's ingot the arithmetic assumed and lets the player judge it.
             lines.add(new Line(INDENT + "(assumes " + volume.metal() + "-size ingots)", theme.error()));
+        }
+    }
+
+    /** Total units in a plan, so the capacity check does not have to re-walk it inline. */
+    private static int totalUnits(int[] counts) {
+        int sum = 0;
+        for (final int count : counts) {
+            sum += count;
+        }
+        return sum;
+    }
+
+    /**
+     * The crucible's fluid capacity in mB, or 0 if it cannot be read.
+     *
+     * <p>{@code crucibleCapacity} is a TFC <em>server</em> config value, so it is whatever the pack
+     * or the server says rather than a number worth hardcoding. Guarded because this runs from a
+     * render event: on a client that has not synced server config yet the accessor can be
+     * unavailable, and 0 makes the caller skip the check rather than invent a limit.
+     */
+    private static int crucibleCapacity() {
+        try {
+            return TFCConfig.SERVER.crucibleCapacity.get();
+        } catch (final NullPointerException | IllegalStateException e) {
+            return 0;
         }
     }
 
