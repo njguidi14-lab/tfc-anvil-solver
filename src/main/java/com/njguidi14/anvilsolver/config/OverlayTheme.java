@@ -42,8 +42,8 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFF4CAF6A, // next
         0xFFF2B8B3, // error
         0x404CAF6A,  // next fill - the next colour at ~25% alpha
-        0xFF00E5FF, // highlight - contrasts BOTH the green and red anvil buttons
-        0x5000E5FF  // highlight fill
+        0xFF5FBCC9, // highlight - contrasts BOTH the green and red anvil buttons
+        0x335FBCC9  // highlight fill
     ),
 
     /**
@@ -67,8 +67,8 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFF4FA3E3, // next - medium blue, perceived brightness ~145
         0xFFFFC145, // error - amber, perceived brightness ~197
         0x404FA3E3,  // next fill - the next colour at ~25% alpha
-        0xFF00E5FF, // highlight - contrasts BOTH the green and red anvil buttons
-        0x5000E5FF  // highlight fill
+        0xFF5FBCC9, // highlight - contrasts BOTH the green and red anvil buttons
+        0x335FBCC9  // highlight fill
     ),
 
     /**
@@ -87,7 +87,7 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFFF4D4D, // error
         0x5533FF66,  // next fill - slightly stronger than the other themes' 25%, still icon-legible
         0xFFFFFFFF, // highlight - contrasts BOTH the green and red anvil buttons
-        0x60FFFFFF  // highlight fill
+        0x45FFFFFF  // highlight fill
     ),
 
     /**
@@ -107,8 +107,8 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFFFFFFF, // next - brightest by design; this is the whole signal
         0xFFD4D4D4, // error - above body text, below next
         0x40FFFFFF,  // next fill - the next colour at ~25% alpha
-        0xFFFFFFFF, // highlight - contrasts BOTH the green and red anvil buttons
-        0x60FFFFFF  // highlight fill
+        0xFFDCDCDC, // highlight - contrasts BOTH the green and red anvil buttons
+        0x38FFFFFF  // highlight fill
     ),
 
     /**
@@ -128,8 +128,8 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFFFB347, // next - hot amber
         0xFFE86A4B, // error - cooling red, clearly below the amber in brightness
         0x40FFB347,  // next fill
-        0xFF00E5FF, // highlight - contrasts BOTH the green and red anvil buttons
-        0x5000E5FF  // highlight fill
+        0xFF5FBCC9, // highlight - contrasts BOTH the green and red anvil buttons
+        0x335FBCC9  // highlight fill
     ),
 
     /**
@@ -148,8 +148,8 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFF5FD0E0, // next - cyan
         0xFFF08A94, // error - soft rose
         0x405FD0E0,  // next fill
-        0xFFFF6BD6, // highlight - contrasts BOTH the green and red anvil buttons
-        0x50FF6BD6  // highlight fill
+        0xFFCE8BBE, // highlight - contrasts BOTH the green and red anvil buttons
+        0x33CE8BBE  // highlight fill
     ),
 
     /**
@@ -168,8 +168,8 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFB8C9AE, // next - a desaturated green, present rather than bright
         0xFFC49A9A, // error - desaturated red, same treatment
         0x30B8C9AE,  // next fill - lighter than the others to match the theme's restraint
-        0xFF7FD4E0, // highlight - contrasts BOTH the green and red anvil buttons
-        0x407FD4E0  // highlight fill
+        0xFF6FA3AD, // highlight - contrasts BOTH the green and red anvil buttons
+        0x2B6FA3AD  // highlight fill
     );
 
     private final int background;
