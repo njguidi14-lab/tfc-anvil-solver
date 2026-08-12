@@ -40,7 +40,7 @@ class AlloySolverTest {
      * tolerance - and every hand-verified case below is far enough inside its range that the value
      * makes no difference to it at all. Confirm the number against TFC's source, not a green run.
      */
-    private static final double TFC_EPSILON = 1.0e-4;
+    private static final double TFC_EPSILON = 1.0d / (2.0d + (Integer.MAX_VALUE - 2));
 
     // Real TFC alloy ranges, as {min...}, {max...} pairs in the recipes' own component order.
     private static final double[] BRONZE_MIN = { 0.88, 0.08 };   // copper, tin

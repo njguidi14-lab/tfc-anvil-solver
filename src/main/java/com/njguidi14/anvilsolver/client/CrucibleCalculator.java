@@ -1194,16 +1194,31 @@ public final class CrucibleCalculator {
         // A recipe has a fixed component list and the player is checking it off, so a component with
         // nothing left to add is answered rather than omitted. "enough" is an answer; a missing line
         // is a question.
+        // Built aside and only committed if something is actually needed.
+        //
+        // "enough" exists for the PARTIAL case: a pot already holding the copper for bronze used to
+        // show a lone "Tin  1 ingot", and one line where the recipe has two reads as the overlay
+        // having lost the copper rather than the copper being done. That fix is right and stays.
+        //
+        // It is wrong for the in-range case, though, which is where it landed as collateral. There
+        // every component says "enough", and the "Ratio to keep" block directly underneath then
+        // prints the very same list of names again with percentages - the same labels twice, back to
+        // back, differing only in the value column. So when nothing is needed these rows are dropped
+        // and the ratio block speaks for them, which is what it was added to do.
+        final List<Line> plan = new ArrayList<>();
         int listed = 0;
         for (int i = 0; i < counts.length; i++) {
             final boolean needed = counts[i] > 0;
             if (needed) {
                 listed++;
             }
-            lines.add(Line.valued(
+            plan.add(Line.valued(
                 INDENT + fluidName(ranges.get(i).fluid()),
                 needed ? counts[i] + (counts[i] == 1 ? " ingot" : " ingots") : "enough",
                 theme.muted()));
+        }
+        if (listed > 0) {
+            lines.addAll(plan);
         }
         if (listed == 0) {
             // A feasible plan of zero ingots means every component is already inside its range.
@@ -2040,18 +2055,26 @@ public final class CrucibleCalculator {
         final boolean useRight = fitsRight || (!fitsLeft && rightSpace >= leftSpace);
         final int x = useRight ? rightEdge : guiLeft - width - gap;
 
-        // Pull the box back on screen if the chosen side cannot hold it.
+        // Pull the box back on screen if the chosen side cannot hold it - but never so far that it
+        // lands on the GUI.
         //
-        // Without this the right-hand branch ran straight off the edge of the window, because nothing
-        // clamped left + width against screen.width - only the left edge was pinned. At 854x480 on
-        // GUI scale 2 the scaled screen is 427 wide and a centred GUI leaves about 122px a side, so a
-        // long alloy name took the tail of the box with it and there was no way to read it. Sliding
-        // it left overlaps the GUI, which is worth it: an overlapping box can be read, a clipped one
-        // cannot, and overlaying is what the negative-gap option already does deliberately.
-        final int onScreen = Math.min(x, screen.width - width);
+        // The first version of this clamp only did the first half, and that was worse than the
+        // clipping it fixed. Sliding the box over the crucible panel puts its target rows on top of
+        // real inventory slots, and clickAt hit-tests the full box width while ClientEvents cancels
+        // any click that hits a row - so left-clicking a slot silently changed the alloy target
+        // instead of picking the item up. An overlay that eats the game's own clicks is a worse
+        // failure than one whose tail is cut off, because the player cannot even work around it.
+        //
+        // So the slide stops at the edge of the GUI on whichever side was chosen. If the box still
+        // does not fit after that, it clips - which is the old behaviour, and the right one to fall
+        // back to: a clipped box costs the end of a long alloy name, and the picker underneath is
+        // still readable and still clickable.
+        final int onScreen = useRight
+            ? Math.max(rightEdge, Math.min(x, screen.width - width))
+            : Math.min(guiLeft - width - gap, Math.max(x, 0));
 
-        // Then the left edge, last, so it wins if the box is wider than the entire window - at which
-        // point something has to be lost and it should be the end of each line rather than the start.
+        // Left edge last, so it wins when the box is wider than the whole window - at which point
+        // something has to be lost and it should be the end of each line rather than the start.
         return Math.max(0, onScreen);
     }
 

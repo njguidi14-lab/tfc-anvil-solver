@@ -50,9 +50,9 @@ public final class AnvilSolverConfig {
         SHOW_ALLOY_CALCULATOR = builder
             .comment(
                 "Show the alloy calculator overlay in the TFC crucible screen.",
-                "Lists what is in the crucible as a percentage of the total, names the alloy it",
-                "currently makes, and works out the fewest whole ingots to melt in to reach a target",
-                "alloy - listed per metal, so the answer is something you can actually go and do.",
+                "Names the alloy the pot currently makes, and works out the fewest whole ingots to",
+                "melt in to reach a target alloy - listed per metal, so the answer is something you",
+                "can actually go and do.",
                 "The target defaults to Automatic, which picks the alloy the mix is closest to -",
                 "measured as how far each metal sits outside that alloy's allowed range, added up.",
                 "Ingot count only breaks ties, and alloys with no answer at all are listed last.",
