@@ -121,10 +121,20 @@ public final class AnvilSolverClient {
     private static final CoolingEstimator COOLING = new CoolingEstimator();
 
     /**
-     * Runtime visibility, flipped by the toggle keybind. Session-only on purpose: it is deliberately
-     * NOT written back to {@link AnvilSolverConfig#ENABLED}, so hiding the overlay for one forging
-     * session never silently rewrites the on-disk config. The config option remains the persistent
-     * "off" switch; this is the temporary one. Defaults to visible.
+     * Runtime visibility of the <em>text box</em>, flipped by the toggle keybind. Session-only on
+     * purpose: it is deliberately NOT written back to {@link AnvilSolverConfig#ENABLED}, so hiding
+     * the overlay for one forging session never silently rewrites the on-disk config. The config
+     * option remains the persistent "off" switch; this is the temporary one. Defaults to visible.
+     *
+     * <p><b>This hides the box only, not the button highlight.</b> The highlight is the more useful
+     * half of the two once you know the mechanic: it sits on the anvil's own button, so following it
+     * needs no reading and no glancing sideways. Hiding the box and keeping the highlight turns the
+     * mod into a pure "press the lit one" guide, which is a legitimate way to use it and the reason
+     * the toggle exists at all - the box is what takes up screen space, not the outline.
+     *
+     * <p>The highlight keeps its own switch, {@link AnvilSolverConfig#HIGHLIGHT_NEXT_BUTTON}, so
+     * every combination is still reachable: box + highlight, highlight alone (toggle off), box alone
+     * (option off), or nothing at all ({@code enabled = false}).
      */
     private static boolean overlayVisible = true;
 
@@ -137,9 +147,10 @@ public final class AnvilSolverClient {
     }
 
     public static void render(AnvilScreen screen, GuiGraphics graphics) {
-        // Both switches must be on: the config value is the persistent setting, overlayVisible is
-        // the per-session keybind toggle.
-        if (!AnvilSolverConfig.ENABLED.get() || !overlayVisible) {
+        // Only the config option stops the mod entirely. The keybind toggle is checked further down,
+        // at the box itself, because it hides the box and deliberately leaves the button highlight
+        // drawn - see overlayVisible's field comment for why that is the useful split.
+        if (!AnvilSolverConfig.ENABLED.get()) {
             // Nothing is being read this frame, so the cooling history is now about a past the
             // estimator can no longer see. See COOLING's field comment for why silence is not
             // enough; every early return below does the same.
@@ -225,10 +236,24 @@ public final class AnvilSolverClient {
         // is drawn, and nothing else.
         final TempReadout temperature = readTemperature(screen, target, work, history);
 
-        final List<Line> lines = buildLines(
-            screen, solution, target, work,
-            temperature, AnvilSolverConfig.SHOW_TEMPERATURE.get(), theme);
-        renderBox(screen, graphics, lines, theme);
+        // The box obeys the keybind toggle; the highlight does not, and that asymmetry is the whole
+        // point of the toggle. Someone who knows the mechanic does not need the press list read out -
+        // they need to know which button to hit, and the outline says that on the button itself,
+        // taking up no screen space and needing no glance sideways. Hiding the box while keeping the
+        // outline turns the mod into a pure "press the lit one" guide.
+        //
+        // The solve still runs when the box is hidden, because the highlight is derived from it. It
+        // is memoised on the anvil's state, so a hidden box costs a map lookup per frame, not a BFS.
+        if (overlayVisible) {
+            final List<Line> lines = buildLines(
+                screen, solution, target, work,
+                temperature, AnvilSolverConfig.SHOW_TEMPERATURE.get(), theme);
+            renderBox(screen, graphics, lines, theme);
+        }
+
+        // Outside the toggle deliberately. Still gated on its own config option, on the solution
+        // being feasible, on there being a press left, and on the item being warm enough to register
+        // one - all inside renderNextButtonHighlight, unchanged.
         renderNextButtonHighlight(screen, graphics, solution, temperature, theme);
     }
 
