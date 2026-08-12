@@ -762,27 +762,11 @@ public final class CrucibleCalculator {
             return new Content(lines, appendCalculator(lines, amounts, total, theme));
         }
 
-        // Sorted largest-first, then by name. The snapshot is a hash map, so its iteration order is
-        // an implementation detail; sorting is what stops the metal list reshuffling itself between
-        // frames or between game sessions.
-        final List<Fluid> present = new ArrayList<>(amounts.keySet());
-        // Written as one explicit comparator rather than
-        // Comparator.comparingDouble(...).reversed().thenComparing(...): thenComparing is overloaded
-        // on both Comparator and Function, and resolving that against a method reference is a
-        // well-known source of "reference to thenComparing is ambiguous". Two lines of Double.compare
-        // are not worth the risk on a build that has to stay green.
-        present.sort((left, right) -> {
-            // Descending: right against left, not left against right.
-            final int byAmount = Double.compare(amountOf(amounts, right), amountOf(amounts, left));
-            return byAmount != 0 ? byAmount : fluidName(left).compareTo(fluidName(right));
-        });
-
-        for (final Fluid fluid : present) {
-            lines.add(Line.valued(
-                fluidName(fluid),
-                percent(fractionOf(amountOf(amounts, fluid), total)),
-                theme.muted()));
-        }
+        // No per-metal composition list here on purpose. TFC's own crucible screen already shows
+        // what is in the pot and in what proportion, immediately to the left of this box, so
+        // repeating it bought nothing and cost a line per metal in a box whose height is the thing
+        // under pressure. What this overlay is for is the part TFC does NOT show: what to add, and
+        // what the target's ratio is. Everything below this point is that.
 
         final FluidStack result = crucible.getAlloyResult();
         final boolean hasResult = result != null && !result.isEmpty();
@@ -1906,13 +1890,6 @@ public final class CrucibleCalculator {
             return "?";
         }
         return new FluidStack(fluid, 1).getHoverName().getString();
-    }
-
-    /** Formats a 0-1 fraction as a percentage to one decimal, e.g. {@code 0.912} to {@code "91.2%"}. */
-    private static String percent(double fraction) {
-        // Locale.ROOT, not the default locale: a French client would otherwise render "91,2%", and
-        // more to the point the decimal separator would change depending on who is playing.
-        return String.format(Locale.ROOT, "%.1f%%", fraction * 100.0);
     }
 
     /**
