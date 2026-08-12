@@ -119,7 +119,10 @@ public final class AnvilSolverConfig {
                 "  clearly in brightness, so they stay apart in greyscale too.",
                 "HIGH_CONTRAST: white text and border on a more opaque black box, for reading the",
                 "  overlay over a busy background.",
-                "MONOCHROME: no colour at all - the next press is simply the brightest line."
+                "MONOCHROME: no colour at all - the next press is simply the brightest line.",
+                "EMBER: warm amber on near-black, the colour of hot metal.",
+                "SLATE: the cool counterpart to EMBER - cyan on blue-grey.",
+                "DIM: deliberately unobtrusive, for leaving the overlay open all the time."
             )
             .defineEnum("theme", OverlayTheme.TFC_GREEN);
 

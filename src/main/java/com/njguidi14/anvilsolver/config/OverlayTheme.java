@@ -101,6 +101,61 @@ public enum OverlayTheme implements TranslatableEnum {
         0xFFFFFFFF, // next - brightest by design; this is the whole signal
         0xFFD4D4D4, // error - above body text, below next
         0x40FFFFFF  // next fill - the next colour at ~25% alpha
+    ),
+
+    /**
+     * Warm amber on near-black, the colour of hot metal.
+     *
+     * <p>Thematic rather than functional: it is the palette a forge overlay arguably should have had
+     * from the start, and it sits against TFC's own orange-heavy anvil and crucible art without
+     * competing with the green the vanilla GUI never uses. The semantic pair is amber against a
+     * desaturated red, which is a weaker separation than {@link #COLORBLIND_SAFE} - use that one if
+     * hue is the thing carrying meaning for you.
+     */
+    EMBER(
+        0xD0140C06, // background - near-black with a warm cast
+        0xFF4A3418, // border
+        0xFF9C8163, // muted
+        0xFFE8D5BC, // text - warm off-white
+        0xFFFFB347, // next - hot amber
+        0xFFE86A4B, // error - cooling red, clearly below the amber in brightness
+        0x40FFB347  // next fill
+    ),
+
+    /**
+     * Cool blue-grey, for anyone who finds the warm palettes noisy over TFC's own art.
+     *
+     * <p>The counterpart to {@link #EMBER}: same idea, opposite temperature. Cyan carries "next" and
+     * a soft rose carries errors, which happens to be a reasonably safe pair for red-green colour
+     * vision deficiency too - though {@link #COLORBLIND_SAFE} is still the one tuned for it, being
+     * separated on brightness as well as hue.
+     */
+    SLATE(
+        0xD00B1016, // background
+        0xFF2C3E4C, // border
+        0xFF7C93A6, // muted
+        0xFFCBD9E3, // text
+        0xFF5FD0E0, // next - cyan
+        0xFFF08A94, // error - soft rose
+        0x405FD0E0  // next fill
+    ),
+
+    /**
+     * Deliberately unobtrusive: dim text on a nearly opaque black panel.
+     *
+     * <p>For playing with the overlay open permanently. Every other palette is built to catch the
+     * eye; this one is built not to, so the numbers are there when looked for and quiet when not.
+     * The {@link #next()} role is still the brightest thing in it - the hierarchy is preserved, just
+     * compressed into a narrower band.
+     */
+    DIM(
+        0xE0060606, // background - the most opaque of any theme, so it never competes with the GUI
+        0xFF262626, // border
+        0xFF5A5A5A, // muted
+        0xFF8A8A8A, // text
+        0xFFB8C9AE, // next - a desaturated green, present rather than bright
+        0xFFC49A9A, // error - desaturated red, same treatment
+        0x30B8C9AE  // next fill - lighter than the others to match the theme's restraint
     );
 
     private final int background;

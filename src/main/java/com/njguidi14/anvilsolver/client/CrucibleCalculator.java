@@ -136,6 +136,33 @@ public final class CrucibleCalculator {
     private static final int LINE_LEADING = 2;
 
     /**
+     * Horizontal gutter in pixels between the label column and the value column.
+     *
+     * <p>This exists because the two spaces it replaces could not do the job. Minecraft's font is
+     * proportional, so "Copper" and "Tin" are different widths and a value concatenated onto either
+     * of them starts wherever that particular name happened to end - which is why the composition
+     * block read as a ragged pile rather than a table. Spaces cannot fix that at any count: they
+     * shift both labels by the same amount and leave the difference between them exactly where it
+     * was. A pixel column can, so the value is now positioned rather than appended.
+     *
+     * <p>Six is about a space and a half in the vanilla font: wide enough that the longest label and
+     * its own value do not touch, narrow enough that the box does not gain a visible corridor down
+     * the middle of it.
+     */
+    private static final int VALUE_GAP = 6;
+
+    /**
+     * The fewest rows left over after the fixed lines that will buy the blank row between the ingot
+     * plan and the target picker - see {@link #layout}, which is where that row is paid for.
+     *
+     * <p>Three, so the picker still gets two rows after the spacer is taken out: one candidate and
+     * the Auto row. The spacer is cosmetic and the rows under it are the only clickable thing in the
+     * box, so on a window too short for both, the rows win and the box goes back to reading as one
+     * block. Below this the layout is unchanged from before the spacer existed.
+     */
+    private static final int SPACER_MIN_SPARE = 3;
+
+    /**
      * Two-space indent used on the ingot lines under a target, so "Copper 9 ingots" visibly belongs
      * to the target named above it rather than reading as part of the composition list.
      */

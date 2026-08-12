@@ -32,10 +32,13 @@
   "anvilsolver.configuration.maxPresses.tooltip": "Maximum number of upcoming presses to list at once.",
 
   "anvilsolver.configuration.theme": "Colour theme",
-  "anvilsolver.configuration.theme.tooltip": "Colour theme for the overlay. Affects colours only - never layout or behaviour. TFC Green is the original green-on-black palette. Colourblind safe uses blue for the next press and amber for warnings, so neither relies on telling red from green. High contrast is white text on a more opaque black box. Monochrome uses no colour at all: the next press is simply the brightest line.",
+  "anvilsolver.configuration.theme.tooltip": "Colour theme for the overlay. Affects colours only - never layout or behaviour. TFC Green is the original green-on-black palette. Colourblind safe uses blue for the next press and amber for warnings, so neither relies on telling red from green. High contrast is white text on a more opaque black box. Monochrome uses no colour at all: the next press is simply the brightest line. Ember is warm amber on near-black, the colour of hot metal. Slate is the cool counterpart, cyan on blue-grey. Dim is deliberately unobtrusive, for leaving the overlay open all the time.",
 
   "anvilsolver.configuration.theme.tfc_green": "TFC Green",
   "anvilsolver.configuration.theme.colorblind_safe": "Colourblind safe",
   "anvilsolver.configuration.theme.high_contrast": "High contrast",
-  "anvilsolver.configuration.theme.monochrome": "Monochrome"
+  "anvilsolver.configuration.theme.monochrome": "Monochrome",
+  "anvilsolver.configuration.theme.ember": "Ember",
+  "anvilsolver.configuration.theme.slate": "Slate",
+  "anvilsolver.configuration.theme.dim": "Dim"
 }
