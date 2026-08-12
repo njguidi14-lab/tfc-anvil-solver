@@ -12,6 +12,7 @@ import java.util.Set;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.njguidi14.anvilsolver.config.AnvilSolverConfig;
 import com.njguidi14.anvilsolver.config.OverlayTheme;
+import com.njguidi14.anvilsolver.solver.AlloySolver;
 import it.unimi.dsi.fastutil.objects.Object2DoubleMap;
 import net.dries007.tfc.client.screen.CrucibleScreen;
 import net.dries007.tfc.common.blockentities.CrucibleBlockEntity;
@@ -196,18 +197,6 @@ public final class CrucibleCalculator {
      * "no mix found within N ingots" rather than a partial answer.
      */
     private static final int MAX_INGOTS_TO_ADD = 64;
-
-    /**
-     * Slack applied to the {@code ceil}/{@code floor} that turn the range bounds into whole ingot
-     * counts.
-     *
-     * <p>{@code min * total} is a product of two doubles and lands a hair either side of the integer
-     * it mathematically is - so a bound that is exactly 9 ingots can compute as 9.0000000001 and
-     * {@code ceil} to 10, silently discarding the correct answer. The tolerance is applied so that
-     * it always <em>widens</em> the candidate interval, never narrows it: a spurious extra candidate
-     * is caught and rejected by {@link #verify}, whereas a wrongly discarded one is gone for good.
-     */
-    private static final double EDGE_TOLERANCE = 1.0e-7;
 
     /**
      * The player's chosen target alloy, identified by the fluid its recipe produces, or null for
@@ -1420,50 +1409,23 @@ public final class CrucibleCalculator {
      * Finds the fewest whole ingots to melt in so that every component of the target lands inside
      * its range at the same time.
      *
-     * <p><b>The arithmetic.</b> Write {@code C_i} for what is in the pot now, {@code T0} for the
-     * current total, {@code V} for one ingot's volume, and {@code n_i} for the ingots of metal
-     * {@code i} to add. Adding {@code K} ingots in total fixes the <em>final</em> total at
-     * {@code T = T0 + K*V} before anything else is decided - which is what makes this tractable,
-     * because the ranges are fractions of that final total and the total is now a known number
-     * rather than something that moves as each metal goes in. Component {@code i} must finish inside
-     * {@code [min_i*T, max_i*T]}, and it finishes at {@code C_i + V*n_i}, so
+     * <p><b>This method is an adapter and nothing else.</b> The whole search - the {@code k} loop,
+     * the per-component brackets, the infeasibility tests, the surplus distribution and the final
+     * verification - is {@link AlloySolver#solve}, in the {@code solver} package, where it is pure
+     * Java and unit-tested. Read that class for the derivation. All this one does is unpack TFC's
+     * {@code AlloyRange} list and the crucible's amount map into the three parallel {@code double[]}
+     * arrays the solve works in, which is exactly what its own local variables already were.
      *
-     * <pre>
-     *   lo_i = max(0, ceil((min_i*T - C_i) / V))
-     *   hi_i =        floor((max_i*T - C_i) / V)
-     * </pre>
+     * <p><b>Why it moved.</b> This arithmetic produced nine user-visible bugs while living here, and
+     * the reason it could not be tested is right there in the parameter list: {@code AlloyRange} and
+     * {@code Fluid} are TFC and Minecraft types, and a {@code Fluid} is not constructible outside a
+     * running game. The maths needed neither of them. The anvil solver in the same codebase, which
+     * is pure and has a suite, has never shipped a bug - the difference was testability.
      *
-     * <p>bracket the only ingot counts that work for that {@code K}. If any bracket is empty the
-     * {@code K} is impossible. If the brackets' minima already exceed {@code K}, or their maxima
-     * cannot reach it, the {@code K} is impossible too. Otherwise every metal starts at {@code lo_i}
-     * and the leftover ingots are spread into the remaining headroom, which cannot break anything
-     * because no metal is ever pushed past its own {@code hi_i}.
-     *
-     * <p>Searching {@code K} upwards from zero and returning the first success is what makes the
-     * answer minimal: any smaller {@code K} was tested and rejected.
-     *
-     * <p><b>Why the answer is verified before it is returned.</b> {@code ceil} and {@code floor} sit
-     * directly on top of floating-point products, and the numbers that decide whether an alloy forms
-     * are computed by TFC with its own epsilon. Rather than trust that this class's rounding and
-     * TFC's tolerance agree, the finished plan is fed back through {@code AlloyRange.isIn} - the
-     * same call the game itself makes. A confidently wrong ingot count is worse than no answer, so a
-     * plan that fails that check is discarded and the search moves on.
-     *
-     * <p><b>{@code V} is one number for the whole solve, not one per metal.</b> That is load-bearing,
-     * not an oversight: it is precisely because {@code V} is scalar that {@code K} fixes {@code T}
-     * up front, and it is because {@code T} is known up front that the ranges become the independent
-     * integer brackets above. Per-metal volumes would make {@code T} depend on which metals the
-     * ingots went to and the derivation would not hold. Where that one number comes from, and what
-     * happens on the packs where the metals disagree, is {@link #chooseIngotVolume}'s problem.
-     *
-     * <p><b>Why the unit and the cap are parameters when there is only one caller.</b> Nothing in the
-     * derivation above says the unit has to be an ingot - only that it is one fixed volume - so this
-     * is written as a solve in whole units of size {@code V}, up to {@code maxUnits} of them, and
-     * {@link #solvePlan} supplies an ingot volume and {@link #MAX_INGOTS_TO_ADD}. Keeping the
-     * generalisation costs nothing: {@code maxUnits} is the loop's upper bound and {@code unitVolume}
-     * the size of one unit, both of which the arithmetic already had to name. It also keeps the
-     * proven bit provably unchanged - the search is byte-for-byte the one that was verified, whatever
-     * unit is handed to it - rather than having the ingot case hardcoded back into it and re-argued.
+     * <p><b>{@code V} is one number for the whole solve, not one per metal.</b> That is load-bearing
+     * rather than an oversight, and it is why {@link #chooseIngotVolume} has to pick one and report
+     * when the target's metals disagree. {@link AlloySolver}'s javadoc explains what the derivation
+     * needs it for.
      *
      * @param total the current total in mB, zero for an empty crucible
      * @param unitVolume one unit's volume in mB, in practice an ingot's; guaranteed positive by the
@@ -1477,6 +1439,10 @@ public final class CrucibleCalculator {
         List<AlloyRange> ranges, Map<Fluid, Double> amounts, int total, int unitVolume, int maxUnits
     ) {
         final int size = ranges.size();
+        // Kept here as well as in AlloySolver, and deliberately BEFORE the unpacking loop below.
+        // A datapack range list can hold a null element, and ranges.get(i).fluid() would throw on
+        // it - so on the "no usable volume" path this must return without touching the list at all,
+        // exactly as it did when the guard and the loop were in the same method.
         if (size == 0 || unitVolume <= 0) {
             return null;
         }
@@ -1489,122 +1455,13 @@ public final class CrucibleCalculator {
             have[i] = amountOf(amounts, range.fluid());
             min[i] = range.min();
             max[i] = range.max();
-            // Ranges come from datapacks. Anything that is not a sane 0-1 interval would propagate
-            // NaN through every bound below and produce a plan that looks authoritative and is not.
-            if (!Double.isFinite(min[i]) || !Double.isFinite(max[i]) || min[i] > max[i]) {
-                return null;
-            }
         }
 
-        final long[] lo = new long[size];
-        final long[] hi = new long[size];
-        final int[] counts = new int[size];
-
-        for (int k = 0; k <= maxUnits; k++) {
-            // long, not int, and now more than a nicety: the volume is read out of pack data rather
-            // than clamped to the config's range, so k*unitVolume has no small upper bound to appeal
-            // to. In long it cannot overflow for any int volume and any int k, and it costs nothing.
-            final long finalTotal = (long) total + (long) k * unitVolume;
-            if (finalTotal <= 0L) {
-                // k == 0 on an empty crucible. Nothing is a valid alloy, and every fraction would be
-                // 0/0, so this is skipped rather than allowed to produce NaN.
-                continue;
-            }
-
-            boolean bracketsOk = true;
-            long sumLo = 0L;
-            long sumHi = 0L;
-            for (int i = 0; i < size; i++) {
-                lo[i] = (long) Math.ceil((min[i] * finalTotal - have[i]) / unitVolume - EDGE_TOLERANCE);
-                hi[i] = (long) Math.floor((max[i] * finalTotal - have[i]) / unitVolume + EDGE_TOLERANCE);
-                if (lo[i] < 0L) {
-                    // Negative would mean "remove metal to get down to the minimum", which is not a
-                    // thing a crucible can do. Zero is the real floor.
-                    lo[i] = 0L;
-                }
-                if (hi[i] > k) {
-                    // No single metal can take more than the whole budget. Clamping here also keeps
-                    // hi small enough that the sums below cannot run away.
-                    hi[i] = k;
-                }
-                if (lo[i] > hi[i]) {
-                    // This metal cannot be brought inside its range at this final total. Usually it
-                    // means the metal is already over its maximum share and k is too small to have
-                    // diluted it back down yet.
-                    bracketsOk = false;
-                    break;
-                }
-                sumLo += lo[i];
-                sumHi += hi[i];
-            }
-            // sumLo > k: the minimum requirements alone need more ingots than this k allows.
-            // sumHi < k: even filling every metal to its maximum cannot absorb this many ingots.
-            if (!bracketsOk || sumLo > k || sumHi < k) {
-                continue;
-            }
-
-            for (int i = 0; i < size; i++) {
-                counts[i] = (int) lo[i];
-            }
-            long surplus = k - sumLo;
-            while (surplus > 0L) {
-                // Each spare ingot goes to whichever metal with headroom left is currently furthest
-                // BELOW the centre of its own range. Any distribution inside the brackets is valid,
-                // so this is a free choice - and spending it on centring the mix is worth doing,
-                // because a component parked on the exact edge of its range is one rounding
-                // difference away from the alloy not forming. Ties go to the earlier component, so
-                // the plan is identical from frame to frame.
-                int pick = -1;
-                double worst = 0.0;
-                for (int i = 0; i < size; i++) {
-                    if (counts[i] >= hi[i]) {
-                        continue;
-                    }
-                    final double share = (have[i] + (double) unitVolume * counts[i]) / finalTotal;
-                    final double offset = share - (min[i] + max[i]) / 2.0;
-                    if (pick < 0 || offset < worst) {
-                        pick = i;
-                        worst = offset;
-                    }
-                }
-                if (pick < 0) {
-                    // Unreachable: sumHi >= k guarantees the headroom exists. Breaking rather than
-                    // spinning means a broken invariant costs one rejected k, not a frozen client.
-                    break;
-                }
-                counts[pick]++;
-                surplus--;
-            }
-            if (surplus > 0L) {
-                continue;
-            }
-
-            if (verify(ranges, have, counts, finalTotal, unitVolume)) {
-                // Cloned because counts is reused by the next iteration of the k loop; the caller
-                // must not be handed an array this method still writes to.
-                return counts.clone();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Re-checks a finished plan against TFC's own range test.
-     *
-     * <p>{@code AlloyRange.isIn} is the exact call that decides whether the alloy forms, epsilon and
-     * all. Comparing against {@code min}/{@code max} by hand here instead would be a second opinion
-     * that is free to disagree with the one that counts.
-     */
-    private static boolean verify(
-        List<AlloyRange> ranges, double[] have, int[] counts, long finalTotal, int unitVolume
-    ) {
-        for (int i = 0; i < ranges.size(); i++) {
-            final double amount = have[i] + (double) unitVolume * counts[i];
-            if (!ranges.get(i).isIn(amount / finalTotal)) {
-                return false;
-            }
-        }
-        return true;
+        // Datapack ranges are checked for sanity, and non-finite amounts rejected, inside the solve
+        // itself - it is a public entry point and has to stand up on its own. This method used to do
+        // that check in the loop above; moving it changes nothing observable, because the loop reads
+        // the same values either way and neither AlloyRange accessor can throw.
+        return AlloySolver.solve(min, max, have, total, unitVolume, maxUnits);
     }
 
     /**
