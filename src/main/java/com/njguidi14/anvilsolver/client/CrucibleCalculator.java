@@ -152,17 +152,6 @@ public final class CrucibleCalculator {
     private static final int VALUE_GAP = 6;
 
     /**
-     * The fewest rows left over after the fixed lines that will buy the blank row between the ingot
-     * plan and the target picker - see {@link #layout}, which is where that row is paid for.
-     *
-     * <p>Three, so the picker still gets two rows after the spacer is taken out: one candidate and
-     * the Auto row. The spacer is cosmetic and the rows under it are the only clickable thing in the
-     * box, so on a window too short for both, the rows win and the box goes back to reading as one
-     * block. Below this the layout is unchanged from before the spacer existed.
-     */
-    private static final int SPACER_MIN_SPARE = 3;
-
-    /**
      * Two-space indent used on the ingot lines under a target, so "Copper 9 ingots" visibly belongs
      * to the target named above it rather than reading as part of the composition list.
      */
@@ -789,9 +778,10 @@ public final class CrucibleCalculator {
         });
 
         for (final Fluid fluid : present) {
-            lines.add(new Line(
-                fluidName(fluid) + "  " + percent(fractionOf(amountOf(amounts, fluid), total)),
-                theme.text()));
+            lines.add(Line.valued(
+                fluidName(fluid),
+                percent(fractionOf(amountOf(amounts, fluid), total)),
+                theme.muted()));
         }
 
         final FluidStack result = crucible.getAlloyResult();
@@ -1219,10 +1209,10 @@ public final class CrucibleCalculator {
                 continue;
             }
             listed++;
-            lines.add(new Line(
-                INDENT + fluidName(ranges.get(i).fluid()) + "  " + counts[i]
-                    + (counts[i] == 1 ? " ingot" : " ingots"),
-                theme.next()));
+            lines.add(Line.valued(
+                INDENT + fluidName(ranges.get(i).fluid()),
+                counts[i] + (counts[i] == 1 ? " ingot" : " ingots"),
+                theme.muted()));
         }
         if (listed == 0) {
             // A feasible plan of zero ingots means every component is already inside its range.
@@ -1238,10 +1228,10 @@ public final class CrucibleCalculator {
             // it costs one line per component instead of a second solve.
             lines.add(new Line("Ratio to keep:", theme.muted()));
             for (final AlloyRange range : ranges) {
-                lines.add(new Line(
-                    INDENT + fluidName(range.fluid()) + "  "
-                        + percentRange(range.min(), range.max()),
-                    theme.text()));
+                lines.add(Line.valued(
+                    INDENT + fluidName(range.fluid()),
+                    percentRange(range.min(), range.max()),
+                    theme.muted()));
             }
         }
 
@@ -1983,9 +1973,14 @@ public final class CrucibleCalculator {
             return;
         }
 
+        // Measured once, here, and handed to both the measuring loop below and the drawing loop
+        // further down. One producer, two consumers - which is the whole reason this is a local and
+        // not something either loop works out for itself.
+        final int labelColumn = labelColumn(font, visible);
+
         int width = PADDING * 2;
         for (final Line line : visible) {
-            width = Math.max(width, PADDING * 2 + textWidth(font, line));
+            width = Math.max(width, PADDING * 2 + textWidth(font, line, labelColumn));
         }
         final int height = PADDING * 2 + row * visible.size();
         final int left = computeBoxX(screen, width);
@@ -2023,6 +2018,15 @@ public final class CrucibleCalculator {
                 }
             }
             graphics.drawString(font, line.text(), left + PADDING, y, line.color(), false);
+            if (line.value() != null) {
+                // Drawn at the shared column rather than after the label, which is the entire point:
+                // every value in the box starts at the same x, so the numbers form a column the eye
+                // can run down instead of a ragged edge it has to hunt along. Always text(), so a
+                // muted label leaves its own number bright - that is where the hierarchy comes from.
+                graphics.drawString(
+                    font, line.value(), left + PADDING + labelColumn + VALUE_GAP, y,
+                    theme.text(), false);
+            }
             y += row;
         }
         pose.popPose();
@@ -2085,8 +2089,31 @@ public final class CrucibleCalculator {
     }
 
     /** Drawn width of a line's content, excluding the box padding. Paired with {@link #rowHeight}. */
-    private static int textWidth(Font font, Line line) {
-        return font.width(line.text());
+    private static int textWidth(Font font, Line line, int labelColumn) {
+        // A valued line's width is measured from the column its value is actually drawn at, not from
+        // its own label - otherwise a short label like "Tin" would report a narrow line while drawing
+        // its value out at the wide column, and the box would be sized too small for its own content.
+        // The column is passed in rather than recomputed here precisely so that measuring and drawing
+        // cannot arrive at two different numbers: there is one producer, in drawBox.
+        return line.value() == null
+            ? font.width(line.text())
+            : labelColumn + VALUE_GAP + font.width(line.value());
+    }
+
+    /**
+     * The width of the label column for one box: the widest label among the lines that carry a value.
+     *
+     * <p>Computed from the <em>visible</em> lines, never the full set. A line trimmed away by the
+     * height budget must not widen the box it is not in.
+     */
+    private static int labelColumn(Font font, List<Line> visible) {
+        int column = 0;
+        for (final Line line : visible) {
+            if (line.value() != null) {
+                column = Math.max(column, font.width(line.text()));
+            }
+        }
+        return column;
     }
 
     /**
@@ -2143,11 +2170,32 @@ public final class CrucibleCalculator {
      * @param target     for a selectable row, the alloy it selects, or null for the "Auto" row;
      *                   always null on a row that is not selectable
      */
-    private record Line(String text, int color, boolean selectable, @Nullable Fluid target) {
+    private record Line(
+        String text, int color, boolean selectable, @Nullable Fluid target, @Nullable String value
+    ) {
 
         /** An ordinary, non-clickable line. Keeps every existing call site reading as it always did. */
         Line(String text, int color) {
-            this(text, color, false, null);
+            this(text, color, false, null, null);
+        }
+
+        /**
+         * A label and a value drawn as two columns rather than one concatenated string.
+         *
+         * <p>This exists because concatenation cannot line anything up. Minecraft's font is
+         * proportional, so {@code "Copper"} and {@code "Tin"} are different widths and a value stuck
+         * onto the end of either starts wherever that particular word finished - which is what made
+         * the composition block read as a ragged pile instead of a table. No amount of space padding
+         * fixes it: spaces move both labels by the same amount and leave the difference between them
+         * exactly where it was.
+         *
+         * <p>So the value is <em>positioned</em>, at a column measured once per box in
+         * {@link #drawBox} from the widest label actually on screen. The label keeps this line's own
+         * colour; the value is always drawn in {@code text()}, which is what gives the block its
+         * hierarchy for free - captions can be muted while the numbers beside them stay bright.
+         */
+        static Line valued(String label, String value, int labelColor) {
+            return new Line(label, labelColor, false, null, value);
         }
 
         /**
@@ -2160,7 +2208,7 @@ public final class CrucibleCalculator {
          * component by the same name.
          */
         static Line row(String text, int color, @Nullable Fluid target) {
-            return new Line(text, color, true, target);
+            return new Line(text, color, true, target, null);
         }
     }
 
