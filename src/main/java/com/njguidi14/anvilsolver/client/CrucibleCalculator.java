@@ -744,7 +744,13 @@ public final class CrucibleCalculator {
 
         final List<Line> lines = new ArrayList<>();
         final boolean empty = amounts.isEmpty() || total <= 0;
-        lines.add(new Line("Crucible  " + (empty ? "empty" : total + " mB"), theme.muted()));
+        // No amount line when there is metal in the pot. TFC's crucible screen shows how much is in
+        // there immediately to the left of this box, so printing it again was the same duplication
+        // the composition list was, one line shorter. The empty case still earns a line, because
+        // "nothing here yet" is what makes the target prompt underneath it make sense.
+        if (empty) {
+            lines.add(new Line("Crucible empty", theme.muted()));
+        }
 
         if (empty) {
             // No composition to list and no result to name. Straight to "what do you want to make?",
@@ -1175,17 +1181,26 @@ public final class CrucibleCalculator {
             return;
         }
 
+        // Every component gets a row, including the ones needing nothing.
+        //
+        // They used to be skipped, on the reasoning that a zero is not an instruction and the height
+        // budget is tight. That was wrong in practice: a pot already holding enough copper for bronze
+        // showed a lone "Tin  1 ingot", and the obvious reading of one line where the recipe has two
+        // is that the overlay has lost the copper - not that the copper is finished. It was reported
+        // as the target being broken, which is exactly how it looked.
+        //
+        // A recipe has a fixed component list and the player is checking it off, so a component with
+        // nothing left to add is answered rather than omitted. "enough" is an answer; a missing line
+        // is a question.
         int listed = 0;
         for (int i = 0; i < counts.length; i++) {
-            if (counts[i] <= 0) {
-                // Metals already in range and needing nothing are omitted rather than printed as
-                // "0 ingots": the box has a tight height budget and a zero is not an instruction.
-                continue;
+            final boolean needed = counts[i] > 0;
+            if (needed) {
+                listed++;
             }
-            listed++;
             lines.add(Line.valued(
                 INDENT + fluidName(ranges.get(i).fluid()),
-                counts[i] + (counts[i] == 1 ? " ingot" : " ingots"),
+                needed ? counts[i] + (counts[i] == 1 ? " ingot" : " ingots") : "enough",
                 theme.muted()));
         }
         if (listed == 0) {
